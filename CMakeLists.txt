@@ -10,13 +10,26 @@ set(INCLUDE
     ${CMAKE_CURRENT_LIST_DIR}/src/SapphireApp.hpp
 )
 
+set(SHADERS
+    assets/cube.vsh
+    assets/cube.psh
+)
+
+set(ASSETS
+    assets/DGLogo.png
+)
+
+set(ALL_ASSETS ${ASSETS} ${SHADERS})
+
+source_group("assets" FILES ${ALL_ASSETS})  
+
 
 add_subdirectory(3rdparty/DiligentEngine/DiligentCore)
 add_subdirectory(3rdparty/DiligentEngine/DiligentFX)
 add_subdirectory(3rdparty/DiligentEngine/DiligentTools)
 add_subdirectory(3rdparty/DiligentEngine/DiligentSamples/SampleBase)
 
-add_target_platform_app(${PROJECT_NAME} "${SOURCE}" "${INCLUDE}" "")
+add_target_platform_app(${PROJECT_NAME} "${SOURCE}" "${INCLUDE}" "${ALL_ASSETS}")
 target_compile_options(${PROJECT_NAME} PRIVATE -DUNICODE -DENGINE_DLL)
 
 # get supported rendering backends - on Widows, that will be OpenGL, Vulcan, DX12
@@ -39,4 +52,16 @@ PUBLIC
     Diligent-NativeAppBase
     DiligentFX
 )
+
+if(PLATFORM_WIN32 OR PLATFORM_LINUX)
+    set_target_properties(${PROJECT_NAME} PROPERTIES 
+            VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+        )
+    # Copy assets to target folder
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+            "\"$<TARGET_FILE_DIR:${PROJECT_NAME}>\"")
+endif()
 copy_required_dlls(${PROJECT_NAME})
+
