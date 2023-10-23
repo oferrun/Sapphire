@@ -6,7 +6,7 @@
 #include "GraphicsUtilities.h"
 #include "TextureUtilities.h"
 #include "MapHelper.hpp"
-
+#include "gainput/gainput.h"
 using namespace Diligent;
 
 SampleBase* Diligent::CreateSample()
