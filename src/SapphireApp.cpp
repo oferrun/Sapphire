@@ -6,7 +6,7 @@
 #include "GraphicsUtilities.h"
 #include "TextureUtilities.h"
 #include "MapHelper.hpp"
-#include "gainput/gainput.h"
+
 using namespace Diligent;
 
 SampleBase* Diligent::CreateSample()
@@ -363,7 +363,19 @@ void SapphireApp::Update(double CurrTime, double ElapsedTime)
 {
     SampleBase::Update(CurrTime, ElapsedTime);
 
-
+    auto inputController = GetInputController();
+    if (inputController.IsKeyFirstDown(InputKeys::MoveLeft))
+    {
+        LOG_INFO_MESSAGE("Key Down First!");
+    }
+    if (inputController.IsKeyDown(InputKeys::MoveLeft))
+    {
+        LOG_INFO_MESSAGE("Key Down!");
+    }
+    if (inputController.IsKeyReleased(InputKeys::MoveLeft))
+    {
+        LOG_INFO_MESSAGE("Key released!");
+    }
     // Apply rotation
     float4x4 CubeModelTransform = float4x4::RotationY(static_cast<float>(CurrTime) * 1.0f) * float4x4::RotationX(-PI_F * 0.1f);
 

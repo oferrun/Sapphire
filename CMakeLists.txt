@@ -27,9 +27,7 @@ source_group("assets" FILES ${ALL_ASSETS})
 add_subdirectory(3rdparty/DiligentEngine/DiligentCore)
 add_subdirectory(3rdparty/DiligentEngine/DiligentFX)
 add_subdirectory(3rdparty/DiligentEngine/DiligentTools)
-add_subdirectory(3rdparty/DiligentEngine/DiligentSamples/SampleBase)
-
-add_subdirectory(3rdparty/gainput)
+add_subdirectory(src/AppBase)
 
 add_target_platform_app(${PROJECT_NAME} "${SOURCE}" "${INCLUDE}" "${ALL_ASSETS}")
 target_compile_options(${PROJECT_NAME} PRIVATE -DUNICODE -DENGINE_DLL)
@@ -44,7 +42,7 @@ PRIVATE
     
     Diligent-BuildSettings
 PUBLIC
-    Diligent-SampleBase
+    AppBase
     Diligent-Common
     Diligent-GraphicsTools
     Diligent-TextureLoader
@@ -55,7 +53,6 @@ PUBLIC
     ${ENGINE_LIBRARIES}
     Diligent-NativeAppBase
     DiligentFX
-    gainputstatic
 )
 
 if(PLATFORM_WIN32 OR PLATFORM_LINUX)
