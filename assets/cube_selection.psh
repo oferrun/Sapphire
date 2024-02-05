@@ -1,0 +1,45 @@
+#include "BasicStructures.fxh"
+#include "ShaderUtilities.fxh"
+
+
+
+cbuffer cbTransforms
+{
+    
+    float4x4 g_World;
+    uint2 g_identity;    
+    uint2 g_pad;
+    
+};
+
+cbuffer cbLightAttribs
+{
+    LightAttribs g_LightAttribs;
+}
+
+cbuffer cbCameraAttribs
+{
+    CameraAttribs g_CameraAttribs;
+}
+
+struct PSInput
+{
+    float4 ClipPos : SV_POSITION;
+    float3 WorldPos : WORLD_POS;
+    float3 Normal : NORMAL;
+    float2 UV : TEX_COORD;
+};
+
+struct PSOutput
+{
+    float4 Color : SV_TARGET;
+};
+
+void main(in  PSInput  PSIn,
+          out PSOutput PSOut)
+{
+        
+    PSOut.Color = float4(g_identity.x, g_identity.x, g_identity.x, g_identity.x);
+    
+
+}

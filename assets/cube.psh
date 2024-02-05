@@ -119,6 +119,13 @@ SurfaceReflectanceInfo GLTF_PBR_GetSurfaceReflectance(int Workflow,
     return SrfInfo;
 }
 
+cbuffer cbTransforms
+{
+    
+    float4x4 g_World;
+    uint2 g_identity;    
+    
+};
 
 cbuffer cbLightAttribs
 {
@@ -130,12 +137,75 @@ cbuffer cbCameraAttribs
     CameraAttribs g_CameraAttribs;
 }
 
+// Statistics buffer contains the global counter of visible objects
+RWByteAddressBuffer PickingBuffer;
+
+///////////////// picking
+bool update_picking_buffers(uint2 pos, uint2 identity, float hit_distance, float opacity)
+{    
+    if (g_CameraAttribs.f4ExtraData[0].a == 0)
+        return false;
+    if (opacity < g_CameraAttribs.f4ExtraData[0].b)
+        return false;
+
+    uint2 cursor_pos = (uint2) g_CameraAttribs.f4ExtraData[0].rg;
+    if (pos.x == cursor_pos.x && pos.y == cursor_pos.y)    
+    {
+        RWByteAddressBuffer buf = PickingBuffer;
+            
+        uint d = asuint(hit_distance);
+
+        if (d <= buf.Load(0))
+            return false;
+        
+        buf.Store3(0, uint3(identity, d));
+        return true;
+        
+    
+            /*
+            // as hit_distance is always positive we can use sign bit to indicate a write lock
+            uint current_d_or_locked = 0;
+            do {
+                // d is behind the stored depth value, safe to return immediately.
+                if (d >= buf.Load(0))
+                    return false;
+
+                buf.InterlockedMin(0, d, current_d_or_locked);
+                // We'll only enter this branch if write lock is unlocked (sign bit not set) and new distance
+                // is less than current distance. 
+                if (d < (int)current_d_or_locked) {
+                    uint last_d = 0;
+                    // Attempt to acquire write lock by setting sign bit.
+                    buf.InterlockedCompareExchange(0, d, asuint(-(int)d), last_d);
+                    // This branch will only be taken if taking the write lock succeded.
+                    if (last_d == d) {
+                        // Update object identity.
+                        buf.Store2(4, identity);                        
+                        uint dummy;
+                        // Release write lock. 
+                        buf.InterlockedExchange(0, d, dummy);
+                    }
+                }
+            // Reiterate until write lock as been released
+            } while((int)current_d_or_locked < 0);
+            */
+    }
+    	
+        //return (pos.x >= (cursor_pos.x - 15) && pos.x < (cursor_pos.x + 15) && pos.y >= (cursor_pos.y - 15) && pos.y < (cursor_pos.y + 15));
+    return false;
+        //return (pos.x >= (cursor_pos.x - 5) && pos.x < (cursor_pos.x + 5) && pos.y >= (cursor_pos.y - 5) && pos.y < (cursor_pos.y + 5));    	
+}
+
+////// end of picking
+
 Texture2D       g_AlbedoTexture;
 SamplerState    g_AlbedoTexture_sampler; // By convention, texture samplers must use the '_sampler' suffix
 Texture2D       g_NormalsTexture;
 SamplerState    g_NormalsTexture_sampler; // By convention, texture samplers must use the '_sampler' suffix
 Texture2D       g_PhysicalDescriptorMap;
 SamplerState    g_PhysicalDescriptorMap_sampler;
+
+
 
 struct PSInput
 {
@@ -204,7 +274,13 @@ void main(in  PSInput  PSIn,
     TMAttribs.fLuminanceSaturation = 1.0;
     color = ToneMap(color, TMAttribs, AverageLogLum);
     
-    PSOut.Color = float4( color, BaseColor.a);
+    bool res = update_picking_buffers(PSIn.ClipPos.xy, g_identity, PSIn.ClipPos.z, BaseColor.a);
+    if (res)
+    {
+        color = float3(1, 0, 0);
+    }
+    
+    PSOut.Color = float4(color, BaseColor.a);
     
 
 }

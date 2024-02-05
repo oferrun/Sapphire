@@ -18,6 +18,22 @@
 
 #include <array>
 
+
+struct PickingBuffer
+{    
+    uint64_t identity;
+    float depth;
+    
+};
+
+struct DrawCallConstants
+{
+    float4x4 transform;
+    uint64_t identity;
+    
+    
+};
+
 float3 unprojectScreenCoords(float2 screen_coords, uint32_t screen_width, uint32_t screen_height, float4x4& inv_mvp_matrix)
 {
     // convert to ndc -1,1 range on x and y
@@ -122,6 +138,331 @@ static void InitCommonSRBVars(IShaderResourceBinding* pSRB,
     }
 }
 
+void SapphireApp::CreateSelectionCompositPSO()
+{
+    GraphicsPipelineStateCreateInfo RTPSOCreateInfo;
+
+    // Pipeline state name is used by the engine to report issues
+    // It is always a good idea to give objects descriptive names
+    // clang-format off
+    RTPSOCreateInfo.PSODesc.Name = "Selection Composit PSO";
+    // This is a graphics pipeline
+    RTPSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_GRAPHICS;
+    // This tutorial will render to a single render target
+    RTPSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
+    // Set render target format which is the format of the swap chain's color buffer
+    RTPSOCreateInfo.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
+    // Set depth buffer format which is the format of the swap chain's back buffer
+    RTPSOCreateInfo.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
+    // Primitive topology defines what kind of primitives will be rendered by this pipeline state
+    RTPSOCreateInfo.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    // Cull back faces
+    RTPSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_BACK;
+    // Enable depth testing
+    RTPSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
+    RTPSOCreateInfo.GraphicsPipeline.BlendDesc = BS_AlphaBlend;
+    // clang-format on
+
+    ShaderCreateInfo ShaderCI;
+    // Tell the system that the shader source code is in HLSL.
+    // For OpenGL, the engine will convert this into GLSL under the hood.
+    ShaderCI.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
+
+    // OpenGL backend requires emulated combined HLSL texture samplers (g_Texture + g_Texture_sampler combination)
+    ShaderCI.Desc.UseCombinedTextureSamplers = true;
+
+    // In this tutorial, we will load shaders from file. To be able to do that,
+    // we need to create a shader source stream factory
+    RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
+    m_pEngineFactory->CreateDefaultShaderSourceStreamFactory(nullptr, &pShaderSourceFactory);
+    ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
+
+    // Create a vertex shader
+    RefCntAutoPtr<IShader> pRTVS;
+    {
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_VERTEX;
+        ShaderCI.EntryPoint = "main";
+        ShaderCI.Desc.Name = "Render Target VS";
+        ShaderCI.FilePath = "rendertarget.vsh";
+        m_pDevice->CreateShader(ShaderCI, &pRTVS);
+    }
+
+    //ShaderMacroHelper Macros;
+    //Macros.AddShaderMacro("TRANSFORM_UV", TransformUVCoords);
+    //ShaderCI.Macros = Macros;
+
+    // Create a pixel shader
+    RefCntAutoPtr<IShader> pRTPS;
+    {
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_PIXEL;
+        ShaderCI.EntryPoint = "main";
+        ShaderCI.Desc.Name = "Render Target PS";
+        ShaderCI.FilePath = "select_composit.psh";
+
+        m_pDevice->CreateShader(ShaderCI, &pRTPS);
+
+    }
+
+    RTPSOCreateInfo.pVS = pRTVS;
+    RTPSOCreateInfo.pPS = pRTPS;
+
+    // Define variable type that will be used by default
+    RTPSOCreateInfo.PSODesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+
+    // clang-format off
+    // Shader variables should typically be mutable, which means they are expected
+    // to change on a per-instance basis
+    ShaderResourceVariableDesc Vars[] =
+    {
+        { SHADER_TYPE_PIXEL, "g_SceneDepthTexture", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+        { SHADER_TYPE_PIXEL, "g_SelectionDepthTexture", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+        { SHADER_TYPE_PIXEL, "g_SelectionTexture", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+    };
+    // clang-format on
+    RTPSOCreateInfo.PSODesc.ResourceLayout.Variables = Vars;
+    RTPSOCreateInfo.PSODesc.ResourceLayout.NumVariables = _countof(Vars);
+
+    // clang-format off
+    // Define immutable sampler for g_Texture. Immutable samplers should be used whenever possible
+    ImmutableSamplerDesc ImtblSamplers[] =
+    {
+        { SHADER_TYPE_PIXEL, "g_SceneDepthTexture", Sam_LinearClamp },
+        { SHADER_TYPE_PIXEL, "g_SelectionDepthTexture", Sam_LinearClamp },
+        { SHADER_TYPE_PIXEL, "g_SelectionTexture", Sam_LinearClamp },
+    };
+    // clang-format on
+    RTPSOCreateInfo.PSODesc.ResourceLayout.ImmutableSamplers = ImtblSamplers;
+    RTPSOCreateInfo.PSODesc.ResourceLayout.NumImmutableSamplers = _countof(ImtblSamplers);
+
+    m_pDevice->CreateGraphicsPipelineState(RTPSOCreateInfo, &m_pSelectionCompositPSO);
+
+
+}
+
+void SapphireApp::CreateRenderTargetPSO()
+{
+    GraphicsPipelineStateCreateInfo RTPSOCreateInfo;
+
+    // Pipeline state name is used by the engine to report issues
+    // It is always a good idea to give objects descriptive names
+    // clang-format off
+    RTPSOCreateInfo.PSODesc.Name = "Render Target PSO";
+    // This is a graphics pipeline
+    RTPSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_GRAPHICS;
+    // This tutorial will render to a single render target
+    RTPSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
+    // Set render target format which is the format of the swap chain's color buffer
+    RTPSOCreateInfo.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
+    // Set depth buffer format which is the format of the swap chain's back buffer
+    RTPSOCreateInfo.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
+    // Primitive topology defines what kind of primitives will be rendered by this pipeline state
+    RTPSOCreateInfo.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    // Cull back faces
+    RTPSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_BACK;
+    // Enable depth testing
+    RTPSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
+    // clang-format on
+
+    ShaderCreateInfo ShaderCI;
+    // Tell the system that the shader source code is in HLSL.
+    // For OpenGL, the engine will convert this into GLSL under the hood.
+    ShaderCI.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
+
+    // OpenGL backend requires emulated combined HLSL texture samplers (g_Texture + g_Texture_sampler combination)
+    ShaderCI.Desc.UseCombinedTextureSamplers = true;
+
+    // In this tutorial, we will load shaders from file. To be able to do that,
+    // we need to create a shader source stream factory
+    RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
+    m_pEngineFactory->CreateDefaultShaderSourceStreamFactory(nullptr, &pShaderSourceFactory);
+    ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
+
+    // Create a vertex shader
+    RefCntAutoPtr<IShader> pRTVS;
+    {
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_VERTEX;
+        ShaderCI.EntryPoint = "main";
+        ShaderCI.Desc.Name = "Render Target VS";
+        ShaderCI.FilePath = "rendertarget.vsh";
+        m_pDevice->CreateShader(ShaderCI, &pRTVS);
+    }
+
+    //ShaderMacroHelper Macros;
+    //Macros.AddShaderMacro("TRANSFORM_UV", TransformUVCoords);
+    //ShaderCI.Macros = Macros;
+
+    // Create a pixel shader
+    RefCntAutoPtr<IShader> pRTPS;
+    {
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_PIXEL;
+        ShaderCI.EntryPoint = "main";
+        ShaderCI.Desc.Name = "Render Target PS";
+        ShaderCI.FilePath = "rendertarget.psh";
+
+        m_pDevice->CreateShader(ShaderCI, &pRTPS);
+
+    }
+
+    RTPSOCreateInfo.pVS = pRTVS;
+    RTPSOCreateInfo.pPS = pRTPS;
+
+    // Define variable type that will be used by default
+    RTPSOCreateInfo.PSODesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+
+    // clang-format off
+    // Shader variables should typically be mutable, which means they are expected
+    // to change on a per-instance basis
+    ShaderResourceVariableDesc Vars[] =
+    {
+        { SHADER_TYPE_PIXEL, "g_Texture", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },        
+    };
+    // clang-format on
+    RTPSOCreateInfo.PSODesc.ResourceLayout.Variables = Vars;
+    RTPSOCreateInfo.PSODesc.ResourceLayout.NumVariables = _countof(Vars);
+
+    // clang-format off
+    // Define immutable sampler for g_Texture. Immutable samplers should be used whenever possible
+    ImmutableSamplerDesc ImtblSamplers[] =
+    {
+        { SHADER_TYPE_PIXEL, "g_Texture", Sam_LinearClamp },        
+    };
+    // clang-format on
+    RTPSOCreateInfo.PSODesc.ResourceLayout.ImmutableSamplers = ImtblSamplers;
+    RTPSOCreateInfo.PSODesc.ResourceLayout.NumImmutableSamplers = _countof(ImtblSamplers);
+
+    m_pDevice->CreateGraphicsPipelineState(RTPSOCreateInfo, &m_pRTPSO);
+
+    
+}
+
+void SapphireApp::CreateSelectionRenderTargetPSO()
+{
+
+   
+    // Pipeline state object encompasses configuration of all GPU stages
+
+    GraphicsPipelineStateCreateInfo PSOCreateInfo;
+
+    // Pipeline state name is used by the engine to report issues.
+    // It is always a good idea to give objects descriptive names.
+    PSOCreateInfo.PSODesc.Name = "Selection PSO";
+
+    // This is a graphics pipeline
+    PSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_GRAPHICS;
+
+    // clang-format off
+    // This tutorial will render to a single render target
+    PSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
+    // Set render target format which is the format of the swap chain's color buffer
+    PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = HighlightRenderTargetFormat;
+    // Set depth buffer format which is the format of the swap chain's back buffer
+    PSOCreateInfo.GraphicsPipeline.DSVFormat = DepthBufferFormat;
+    // Primitive topology defines what kind of primitives will be rendered by this pipeline state
+    PSOCreateInfo.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    // Cull back faces
+    PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_BACK;
+    // Enable depth testing
+    PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = True;
+    PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = True;
+    PSOCreateInfo.GraphicsPipeline.BlendDesc = BS_Default;
+    //PSOCreateInfo.GraphicsPipeline.BlendDesc = BS_AlphaBlend;
+    // clang-format on
+
+    ShaderCreateInfo ShaderCI;
+    // Tell the system that the shader source code is in HLSL.
+    // For OpenGL, the engine will convert this into GLSL under the hood.
+    ShaderCI.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
+
+    // OpenGL backend requires emulated combined HLSL texture samplers (g_Texture + g_Texture_sampler combination)
+    ShaderCI.Desc.UseCombinedTextureSamplers = true;
+
+    // Create a shader source stream factory to load shaders from files.
+    RefCntAutoPtr<IShaderSourceInputStreamFactory> pShaderSourceFactory;
+    m_pEngineFactory->CreateDefaultShaderSourceStreamFactory(nullptr, &pShaderSourceFactory);
+    ShaderCI.pShaderSourceStreamFactory = pShaderSourceFactory;
+    // Create a vertex shader
+    RefCntAutoPtr<IShader> pVS;
+    {
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_VERTEX;
+        ShaderCI.EntryPoint = "main";
+        ShaderCI.Desc.Name = "Defualt VS";
+        ShaderCI.FilePath = "cube.vsh";
+        m_pDevice->CreateShader(ShaderCI, &pVS);
+       
+    }
+
+    // Create a pixel shader
+    RefCntAutoPtr<IShader> pPS;
+    {
+        ShaderCI.Desc.ShaderType = SHADER_TYPE_PIXEL;
+        ShaderCI.EntryPoint = "main";
+        ShaderCI.Desc.Name = "Defualt Selection PS";
+        ShaderCI.FilePath = "cube_selection.psh";
+        m_pDevice->CreateShader(ShaderCI, &pPS);
+    }
+
+    
+
+    
+    // clang-format off
+    // Define vertex shader input layout
+    LayoutElement LayoutElems[] =
+    {
+        // Attribute 0 - vertex position
+        LayoutElement{0, 0, 3, VT_FLOAT32, False},
+        // Attribute 0 - normals
+        LayoutElement{1, 0, 3, VT_FLOAT32, False},
+        // Attribute 2 - texture coordinates
+        LayoutElement{2, 0, 2, VT_FLOAT32, False}
+    };
+    // clang-format on
+
+    PSOCreateInfo.pVS = pVS;
+    PSOCreateInfo.pPS = pPS;
+
+    PSOCreateInfo.GraphicsPipeline.InputLayout.LayoutElements = LayoutElems;
+    PSOCreateInfo.GraphicsPipeline.InputLayout.NumElements = _countof(LayoutElems);
+
+    // Define variable type that will be used by default
+    PSOCreateInfo.PSODesc.ResourceLayout.DefaultVariableType = SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+
+    // clang-format off
+    // Shader variables should typically be mutable, which means they are expected
+    // to change on a per-instance basis
+    ShaderResourceVariableDesc Vars[] =
+    {
+        {SHADER_TYPE_VERTEX, "cbCameraAttribs", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+        {SHADER_TYPE_VERTEX, "cbTransforms", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_PIXEL, "cbTransforms", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+    };
+    // clang-format on
+    PSOCreateInfo.PSODesc.ResourceLayout.Variables = Vars;
+    PSOCreateInfo.PSODesc.ResourceLayout.NumVariables = _countof(Vars);
+
+
+    m_pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &m_pSelectionRTPSO);
+
+    // Since we did not explcitly specify the type for 'Constants' variable, default
+    // type (SHADER_RESOURCE_VARIABLE_TYPE_STATIC) will be used. Static variables
+    // never change and are bound directly through the pipeline state object.
+    //m_pPSO->GetStaticVariableByName(SHADER_TYPE_VERTEX, "Constants")->Set(m_VSConstants);
+    m_pSelectionRTPSO->GetStaticVariableByName(SHADER_TYPE_VERTEX, "cbCameraAttribs")->Set(m_CameraAttribsCB);
+    
+
+    // Since we are using mutable variable, we must create a shader resource ``ing object
+    // http://diligentgraphics.com/2016/03/23/resource-binding-model-in-diligent-engine-2-0/
+    m_pSelectionRTPSO->CreateShaderResourceBinding(&m_pSelectionRTSRB, true);
+
+
+    m_pSelectionRTSRB->GetVariableByName(SHADER_TYPE_VERTEX, "cbTransforms")->Set(m_VSConstants);
+    m_pSelectionRTSRB->GetVariableByName(SHADER_TYPE_PIXEL, "cbTransforms")->Set(m_VSConstants);
+  
+
+
+
+
+}
+
 void SapphireApp::CreatePlanePipelineState()
 {
     // Pipeline state object encompasses configuration of all GPU stages
@@ -139,9 +480,9 @@ void SapphireApp::CreatePlanePipelineState()
     // This tutorial will render to a single render target
     PSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
     // Set render target format which is the format of the swap chain's color buffer
-    PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
+    PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = RenderTargetFormat;
     // Set depth buffer format which is the format of the swap chain's back buffer
-    PSOCreateInfo.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
+    PSOCreateInfo.GraphicsPipeline.DSVFormat = DepthBufferFormat;
     // Primitive topology defines what kind of primitives will be rendered by this pipeline state
     PSOCreateInfo.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     // Cull back faces
@@ -223,7 +564,7 @@ void SapphireApp::CreatePlanePipelineState()
     ShaderResourceVariableDesc Vars[] =
     {
         {SHADER_TYPE_VERTEX, "cbCameraAttribs", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},        
-        {SHADER_TYPE_VERTEX, "cbGridAttribs", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
+        {SHADER_TYPE_VERTEX, "cbGridAttribs", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},        
     };
     // clang-format on
     PSOCreateInfo.PSODesc.ResourceLayout.Variables = Vars;
@@ -278,13 +619,13 @@ void SapphireApp::CreatePipelineState()
     // This tutorial will render to a single render target
     PSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
     // Set render target format which is the format of the swap chain's color buffer
-    PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
+    PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = RenderTargetFormat;
     // Set depth buffer format which is the format of the swap chain's back buffer
-    PSOCreateInfo.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
+    PSOCreateInfo.GraphicsPipeline.DSVFormat = DepthBufferFormat;
     // Primitive topology defines what kind of primitives will be rendered by this pipeline state
     PSOCreateInfo.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     // Cull back faces
-    PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_NONE;
+    PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_BACK;
     // Enable depth testing
     PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = True;
     PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = True;
@@ -314,7 +655,8 @@ void SapphireApp::CreatePipelineState()
         m_pDevice->CreateShader(ShaderCI, &pVS);
         // Create dynamic uniform buffer that will store our transformation matrix
         // Dynamic buffers can be frequently updated by the CPU
-        CreateUniformBuffer(m_pDevice, sizeof(float4x4), "VS constants CB", &m_VSConstants);
+        size_t ooo = sizeof(DrawCallConstants);
+        CreateUniformBuffer(m_pDevice, ooo, "VS constants CB", &m_VSConstants);
         
         
     }
@@ -337,6 +679,7 @@ void SapphireApp::CreatePipelineState()
     {
         {m_CameraAttribsCB,        RESOURCE_STATE_UNKNOWN, RESOURCE_STATE_CONSTANT_BUFFER, STATE_TRANSITION_FLAG_UPDATE_STATE},
         {m_LightAttribsCB,         RESOURCE_STATE_UNKNOWN, RESOURCE_STATE_CONSTANT_BUFFER, STATE_TRANSITION_FLAG_UPDATE_STATE},
+        {m_VSConstants,            RESOURCE_STATE_UNKNOWN, RESOURCE_STATE_CONSTANT_BUFFER, STATE_TRANSITION_FLAG_UPDATE_STATE},
         
     };
     // clang-format on
@@ -371,9 +714,11 @@ void SapphireApp::CreatePipelineState()
     {
         {SHADER_TYPE_VERTEX, "cbCameraAttribs", SHADER_RESOURCE_VARIABLE_TYPE_STATIC},
         {SHADER_TYPE_VERTEX, "cbTransforms", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_PIXEL, "cbTransforms", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
         {SHADER_TYPE_PIXEL, "g_AlbedoTexture", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
         {SHADER_TYPE_PIXEL, "g_NormalsTexture", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
-        {SHADER_TYPE_PIXEL, "g_PhysicalDescriptorMap", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE}
+        {SHADER_TYPE_PIXEL, "g_PhysicalDescriptorMap", SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE},
+        {SHADER_TYPE_PIXEL, "PickBuffer", SHADER_RESOURCE_VARIABLE_TYPE_STATIC}
     };
     // clang-format on
     PSOCreateInfo.PSODesc.ResourceLayout.Variables = Vars;
@@ -412,6 +757,11 @@ void SapphireApp::CreatePipelineState()
         m_pPSO->GetStaticVariableByName(SHADER_TYPE_PIXEL, "cbLightAttribs")->Set(m_LightAttribsCB);
     }
 
+    if (m_pPSO->GetStaticVariableByName(SHADER_TYPE_PIXEL, "PickingBuffer"))
+    {
+        m_pPSO->GetStaticVariableByName(SHADER_TYPE_PIXEL, "PickingBuffer")->Set(m_pPickingBuffer->GetDefaultView(BUFFER_VIEW_UNORDERED_ACCESS));
+    }
+
     // Since we are using mutable variable, we must create a shader resource ``ing object
     // http://diligentgraphics.com/2016/03/23/resource-binding-model-in-diligent-engine-2-0/
     m_pPSO->CreateShaderResourceBinding(&m_SRB[0], true);
@@ -422,6 +772,8 @@ void SapphireApp::CreatePipelineState()
    // InitCommonSRBVars(m_SRB[0], m_CameraAttribsCB, nullptr);
 
     m_SRB[0]->GetVariableByName(SHADER_TYPE_VERTEX, "cbTransforms")->Set(m_VSConstants);
+    m_SRB[0]->GetVariableByName(SHADER_TYPE_PIXEL, "cbTransforms")->Set(m_VSConstants);
+    
 }
 
 struct Vertex
@@ -619,6 +971,8 @@ void SapphireApp::CreateVertexBuffer()
     IBData.pData = pol_indices.data();
     IBData.DataSize = pol_indices.size() * sizeof(uint32_t);
     m_pDevice->CreateBuffer(IndBuffDesc, &IBData, &m_TerrainIndexBuffer);
+
+
     
 }
 
@@ -730,27 +1084,61 @@ void SapphireApp::Initialize(const SampleInitInfo& InitInfo)
 {
     LOG_INFO_MESSAGE("HARA");
 
+    /*_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    _CrtSetBreakAlloc(2570);*/
+
     static Sapphire::SapphireSystemAllocator s_systemAllocator;
     
    
     //if (luaL_dofile(L, "hello.lua")) {
 
-    Sapphire::HashMap<uint64_t, uint32_t> mapStrToIndex = {};
+    //Sapphire::HashMap<uint64_t, uint32_t> mapStrToIndex = {};
     
     
-    mapStrToIndex.allocator = &s_systemAllocator;
-    mapStrToIndex.default_value = 0;
-    mapStrToIndex.addValue(0, 110);
-    mapStrToIndex.addValue(1, 111);
+    //mapStrToIndex.allocator = &s_systemAllocator;
+    //mapStrToIndex.default_value = 0;
+    //mapStrToIndex.addValue(0, 110);
+    //mapStrToIndex.addValue(1, 111);
 
-    uint32_t val = mapStrToIndex.hasKey(111);
-    printf("%d", val);
+    //uint32_t val = mapStrToIndex.hasKey(111);
+    //printf("%d", val);
 
     SampleBase::Initialize(InitInfo);
     // Reset default colors
     ImGui::StyleColorsDark();
 
+
+    /// picking buffers
+    BufferDesc BuffDesc;
+    BuffDesc.Name = "Statistics buffer";
+    BuffDesc.Usage = USAGE_DEFAULT;
+    BuffDesc.BindFlags = BIND_UNORDERED_ACCESS;
+    BuffDesc.Mode = BUFFER_MODE_RAW;
+    BuffDesc.Size = sizeof(PickingBuffer);
+
+    m_pDevice->CreateBuffer(BuffDesc, nullptr, &m_pPickingBuffer);
+
+
+    // Staging buffer is needed to read the data from statistics buffer.
+
+    BuffDesc.Name = "Statistics staging buffer";
+    BuffDesc.Usage = USAGE_STAGING;
+    BuffDesc.BindFlags = BIND_NONE;
+    BuffDesc.Mode = BUFFER_MODE_UNDEFINED;
+    BuffDesc.CPUAccessFlags = CPU_ACCESS_READ;
+    BuffDesc.Size = sizeof(PickingBuffer);
+
+    m_pDevice->CreateBuffer(BuffDesc, nullptr, &m_pPickingBufferStaging);
+
+
+    FenceDesc FDesc;
+    FDesc.Name = "Statistics available";
+    m_pDevice->CreateFence(FDesc, &m_pPickingInfoAvailable);
+
+    CreateRenderTargetPSO();
+    CreateSelectionCompositPSO();
     CreatePipelineState();
+    CreateSelectionRenderTargetPSO();
     CreatePlanePipelineState();
     CreateVertexBuffer();
     CreateIndexBuffer();
@@ -840,21 +1228,27 @@ void SapphireApp::UpdateUI()
 // Render a frame
 void SapphireApp::Render()
 {
-    auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
+
+    
 
     auto ClearColor = m_ClearColor;
     if (GetTextureFormatAttribs(m_pSwapChain->GetDesc().ColorBufferFormat).ComponentType == COMPONENT_TYPE_UNORM_SRGB)
     {
         ClearColor = SRGBToLinear(ClearColor);
     }
-    m_pImmediateContext->ClearRenderTarget(pRTV, &ClearColor.x, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    if (GetTextureFormatAttribs(RenderTargetFormat).ComponentType == COMPONENT_TYPE_UNORM_SRGB)
+    {
+        ClearColor = SRGBToLinear(ClearColor);
+    }
 
-   
-    auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
+    m_pImmediateContext->SetRenderTargets(1, &m_pColorRTV, m_pDepthDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_pImmediateContext->ClearRenderTarget(m_pColorRTV, &ClearColor.x, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_pImmediateContext->ClearDepthStencil(m_pDepthDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-    
-  
-    m_pImmediateContext->ClearDepthStencil(pDSV, CLEAR_DEPTH_FLAG, 1.f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    // Reset picking buffer
+    PickingBuffer picking_buffer;
+    std::memset(&picking_buffer, 0, sizeof(picking_buffer));
+    m_pImmediateContext->UpdateBuffer(m_pPickingBuffer, 0, sizeof(picking_buffer), &picking_buffer, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
     
     
@@ -960,10 +1354,12 @@ void SapphireApp::Render()
     float4x4 CameraView = float4x4::Translation(0.f, -1, m_CameraDistance);
 
     // Get projection matrix adjusted to the current screen orientation
-    const auto CameraProj = GetAdjustedProjectionMatrix(PI_F / 4.0f, 0.1f, 1000.f);
+    const auto CameraProj = GetAdjustedProjectionMatrix(PI_F / 4.0f, 0.1f, 100.f);
     const auto CameraViewProj = CameraView * CameraProj;
 
-
+    static bool has_pick_request = false;
+    static bool has_signaled = false;
+    static Uint64 pick_frame = 1;
 
     float4x4 CameraWorld = CameraView.Inverse();
     float3 CameraWorldPos = float3::MakeVector(CameraWorld[3]);
@@ -974,6 +1370,19 @@ void SapphireApp::Render()
         CamAttribs->mViewProjT = CameraViewProj.Transpose();
         CamAttribs->mViewProjInvT = CameraViewProj.Inverse().Transpose();
         CamAttribs->f4Position = float4(CameraWorldPos, 1);
+        // store mouse position and and picking opacity threshold
+        auto inputController = GetInputController();
+        auto mouse_state = inputController.GetMouseState();
+
+        if (!has_pick_request)
+        {
+            has_pick_request = mouse_state.ButtonFlags & MouseState::BUTTON_FLAG_LEFT;
+            CamAttribs->f4ExtraData[0] = float4(mouse_state.PosX, mouse_state.PosY, 0.5, mouse_state.ButtonFlags & MouseState::BUTTON_FLAG_LEFT);
+            pick_frame = m_FrameId;
+        }
+        
+        
+        
     }
 
     {
@@ -1011,6 +1420,15 @@ void SapphireApp::Render()
         //m_pImmediateContext->SetVertexBuffers(0, 1, pPlaneBuffs, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION, SET_VERTEX_BUFFERS_FLAG_RESET);
         m_pImmediateContext->Draw(draw_attribs);
 #endif
+        {
+            MapHelper<LightAttribs> lightAttribs(m_pImmediateContext, m_LightAttribsCB, MAP_WRITE, MAP_FLAG_DISCARD);
+            lightAttribs->f4Direction = m_LightDirection;
+            lightAttribs->f4Direction.z *= -1.0f;
+            lightAttribs->f4Intensity = m_LightColor * m_LightIntensity;
+        }
+
+        m_pImmediateContext->SetPipelineState(m_pPSO);
+        m_pImmediateContext->CommitShaderResources(m_SRB[0], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
         {
             //// Draw Cube
@@ -1019,17 +1437,71 @@ void SapphireApp::Render()
             float4x4 playerWorldTransform = m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
             {
                 // Map the buffer and write current world-view-projection matrix
-                MapHelper<float4x4> CBConstants(m_pImmediateContext, m_VSConstants, MAP_WRITE, MAP_FLAG_DISCARD);
-                *CBConstants = playerWorldTransform;
+                MapHelper<DrawCallConstants> cbDrawCallConstants(m_pImmediateContext, m_VSConstants, MAP_WRITE, MAP_FLAG_DISCARD);
+                cbDrawCallConstants->transform = playerWorldTransform;
+                cbDrawCallConstants->identity = 0x1;
             }
+            
+            
+            IBuffer* pBuffs[] = { m_CubeVertexBuffer };
+            m_pImmediateContext->SetVertexBuffers(0, 1, pBuffs, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION, SET_VERTEX_BUFFERS_FLAG_RESET);
+            m_pImmediateContext->SetIndexBuffer(m_CubeIndexBuffer, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            // 
+            DrawIndexedAttribs DrawAttrs;     // This is an indexed draw call
+            DrawAttrs.IndexType = VT_UINT32; // Index type
+            DrawAttrs.NumIndices = 36;
+            // DrawAttrs.NumIndices = 6;
+            // // Verify the state of vertex and index buffers
+            DrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL;
+            m_pImmediateContext->DrawIndexed(DrawAttrs);
+        }
+
+        {
+            //// Draw Cube
+
+            float3 world_pos = { 1,1,1 };
+            float4x4 playerWorldTransform = m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
             {
-                MapHelper<LightAttribs> lightAttribs(m_pImmediateContext, m_LightAttribsCB, MAP_WRITE, MAP_FLAG_DISCARD);
-                lightAttribs->f4Direction = m_LightDirection;
-                lightAttribs->f4Direction.z *= -1.0f;
-                lightAttribs->f4Intensity = m_LightColor * m_LightIntensity;
+                // Map the buffer and write current world-view-projection matrix
+                MapHelper<DrawCallConstants> cbDrawCallConstants(m_pImmediateContext, m_VSConstants, MAP_WRITE, MAP_FLAG_DISCARD);
+                cbDrawCallConstants->transform = playerWorldTransform;
+                cbDrawCallConstants->identity = 0x8;
             }
-            m_pImmediateContext->SetPipelineState(m_pPSO);
-            m_pImmediateContext->CommitShaderResources(m_SRB[0], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+            
+            IBuffer* pBuffs[] = { m_CubeVertexBuffer };
+            m_pImmediateContext->SetVertexBuffers(0, 1, pBuffs, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION, SET_VERTEX_BUFFERS_FLAG_RESET);
+            m_pImmediateContext->SetIndexBuffer(m_CubeIndexBuffer, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+            // 
+            DrawIndexedAttribs DrawAttrs;     // This is an indexed draw call
+            DrawAttrs.IndexType = VT_UINT32; // Index type
+            DrawAttrs.NumIndices = 36;
+            // DrawAttrs.NumIndices = 6;
+            // // Verify the state of vertex and index buffers
+            DrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL;
+            m_pImmediateContext->DrawIndexed(DrawAttrs);
+        }
+
+        //// render to selection buffer
+        m_pImmediateContext->SetRenderTargets(1, &m_pSelectionColorRTV, m_pSelectionDepthDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->ClearRenderTarget(m_pSelectionColorRTV, &ClearColor.x, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->ClearDepthStencil(m_pSelectionDepthDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+        m_pImmediateContext->SetPipelineState(m_pSelectionRTPSO);
+        m_pImmediateContext->CommitShaderResources(m_pSelectionRTSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+        {
+            //// Draw Cube
+
+            float3 world_pos = { 0,1,0 };
+            float4x4 playerWorldTransform = m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
+            {
+                // Map the buffer and write current world-view-projection matrix
+                MapHelper<DrawCallConstants> cbDrawCallConstants(m_pImmediateContext, m_VSConstants, MAP_WRITE, MAP_FLAG_DISCARD);
+                cbDrawCallConstants->transform = playerWorldTransform;
+                cbDrawCallConstants->identity = 0x1;
+            }
+
+
             IBuffer* pBuffs[] = { m_CubeVertexBuffer };
             m_pImmediateContext->SetVertexBuffers(0, 1, pBuffs, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION, SET_VERTEX_BUFFERS_FLAG_RESET);
             m_pImmediateContext->SetIndexBuffer(m_CubeIndexBuffer, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1045,6 +1517,88 @@ void SapphireApp::Render()
        
     }
 #endif
+
+    if (has_pick_request)
+    {
+        if (!has_signaled)
+        {
+            m_pImmediateContext->CopyBuffer(m_pPickingBuffer, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+                m_pPickingBufferStaging, 0, sizeof(PickingBuffer),
+                RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+            // We should use synchronizations to safely access the mapped memory.
+            m_pImmediateContext->EnqueueSignal(m_pPickingInfoAvailable, m_FrameId);
+            has_signaled = true;
+        }
+       
+
+        // Read statistics from previous frame.
+        Uint64 AvailableFrameId = m_pPickingInfoAvailable->GetCompletedValue();
+
+        //int historySize = 10;
+
+        //// Synchronize
+        //if (m_FrameId - AvailableFrameId > historySize)
+        //{
+        //    // In theory we should never get here as we wait for more than enough
+        //    // frames.
+        //    AvailableFrameId = m_FrameId - historySize;
+        //    m_pPickingInfoAvailable->Wait(AvailableFrameId);
+        //}
+
+        // Read the staging data
+        if (AvailableFrameId >= pick_frame)
+        {
+            MapHelper<PickingBuffer> StagingData(m_pImmediateContext, m_pPickingBufferStaging, MAP_READ, MAP_FLAG_DO_NOT_WAIT);
+            if (StagingData)
+            {
+                uint64_t hello_from_space = StagingData->identity;
+                printf("%lld\n", hello_from_space);
+            }
+            has_pick_request = false;
+            has_signaled = false;
+        }
+        
+        ++m_FrameId;
+        
+    }
+
+    // render output to render target
+
+    auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
+    auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
+    const float Zero[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    m_pImmediateContext->SetRenderTargets(1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+    m_pImmediateContext->ClearRenderTarget(pRTV, Zero, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+    // Set the render target pipeline state
+    m_pImmediateContext->SetPipelineState(m_pRTPSO);
+
+    // Commit the render target shader's resources
+    m_pImmediateContext->CommitShaderResources(m_pRTSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+    // Draw the render target's vertices
+    DrawAttribs RTDrawAttrs;
+    RTDrawAttrs.NumVertices = 4;
+    RTDrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL; // Verify the state of vertex and index buffers
+    m_pImmediateContext->Draw(RTDrawAttrs);
+
+    // run composite selection pass
+
+    // Set the render target pipeline state
+    m_pImmediateContext->SetPipelineState(m_pSelectionCompositPSO);
+
+    // Commit the render target shader's resources
+    m_pImmediateContext->CommitShaderResources(m_pSelectionCompositSRB, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
+    // Draw the render target's vertices
+    
+    RTDrawAttrs.NumVertices = 4;
+    RTDrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL; // Verify the state of vertex and index buffers
+    m_pImmediateContext->Draw(RTDrawAttrs);
+  
+
+    
     // set PSO
     
     //DrawAttrs.NumIndices = 6;
@@ -1107,8 +1661,12 @@ void SapphireApp::Update(double CurrTime, double ElapsedTime)
     {
         LOG_INFO_MESSAGE("Key released!");
     }
+
+    
+    
     // Apply rotation
     //float4x4 CubeModelTransform = float4x4::RotationZ(-PI_F * 0.0f);
+
    
     
 
@@ -1208,6 +1766,98 @@ void SapphireApp::Update(double CurrTime, double ElapsedTime)
 
 void SapphireApp::WindowResize(Uint32 Width, Uint32 Height)
 {
+    // Create window - size offscreen render target
+    TextureDesc RTColorDesc;
+    RTColorDesc.Name = "Offscreen render target";
+    RTColorDesc.Type = RESOURCE_DIM_TEX_2D;
+    RTColorDesc.Width = m_pSwapChain->GetDesc().Width;
+    RTColorDesc.Height = m_pSwapChain->GetDesc().Height;
+    RTColorDesc.MipLevels = 1;
+    RTColorDesc.Format = RenderTargetFormat;
+    // The render target can be bound as a shader resource and as a render target
+    RTColorDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_RENDER_TARGET;
+    // Define optimal clear value
+    RTColorDesc.ClearValue.Format = RTColorDesc.Format;
+    RTColorDesc.ClearValue.Color[0] = 0.350f;
+    RTColorDesc.ClearValue.Color[1] = 0.350f;
+    RTColorDesc.ClearValue.Color[2] = 0.350f;
+    RTColorDesc.ClearValue.Color[3] = 1.f;
+    RefCntAutoPtr<ITexture> pRTColor;
+    m_pDevice->CreateTexture(RTColorDesc, nullptr, &pRTColor);
+    // Store the render target view
+    m_pColorRTV = pRTColor->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET);
+
+
+    // Create window-size depth buffer
+    TextureDesc RTDepthDesc = RTColorDesc;
+    RTDepthDesc.Name = "Offscreen depth buffer";
+    RTDepthDesc.Format = DepthBufferFormat;
+    RTDepthDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_DEPTH_STENCIL;
+    // Define optimal clear value
+    RTDepthDesc.ClearValue.Format = RTDepthDesc.Format;
+    RTDepthDesc.ClearValue.DepthStencil.Depth = 1;
+    RTDepthDesc.ClearValue.DepthStencil.Stencil = 0;
+    RefCntAutoPtr<ITexture> pRTDepth;
+    m_pDevice->CreateTexture(RTDepthDesc, nullptr, &pRTDepth);
+    // Store the depth-stencil view
+    m_pDepthDSV = pRTDepth->GetDefaultView(TEXTURE_VIEW_DEPTH_STENCIL);
+
+    // We need to release and create a new SRB that references new off-screen render target SRV
+    m_pRTSRB.Release();
+    m_pRTPSO->CreateShaderResourceBinding(&m_pRTSRB, true);
+    m_pRTSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture")->Set(pRTColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+    // Set render target color texture SRV in the SRB
+    //m_pRTSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_Texture")->Set(pRTColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+
+    //////////////// Selection render target
+
+    // Create window - size offscreen render target
+    
+    RTColorDesc.Name = "Offscreen render target";
+    RTColorDesc.Type = RESOURCE_DIM_TEX_2D;
+    RTColorDesc.Width = m_pSwapChain->GetDesc().Width;
+    RTColorDesc.Height = m_pSwapChain->GetDesc().Height;
+    RTColorDesc.MipLevels = 1;
+    RTColorDesc.Format = HighlightRenderTargetFormat;
+    // The render target can be bound as a shader resource and as a render target
+    RTColorDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_RENDER_TARGET;
+    // Define optimal clear value
+    RTColorDesc.ClearValue.Format = RTColorDesc.Format;
+    RTColorDesc.ClearValue.Color[0] = 0;
+    RefCntAutoPtr<ITexture> pSelectionRTColor;
+    m_pDevice->CreateTexture(RTColorDesc, nullptr, &pSelectionRTColor);
+    // Store the render target view
+    m_pSelectionColorRTV = pSelectionRTColor->GetDefaultView(TEXTURE_VIEW_RENDER_TARGET);
+
+
+    // Create window-size depth buffer
+    
+    RTDepthDesc.Name = "Offscreen depth buffer";
+    RTDepthDesc.Format = DepthBufferFormat;
+    RTDepthDesc.BindFlags = BIND_SHADER_RESOURCE | BIND_DEPTH_STENCIL;
+    // Define optimal clear value
+    RTDepthDesc.ClearValue.Format = RTDepthDesc.Format;
+    RTDepthDesc.ClearValue.DepthStencil.Depth = 1;
+    RTDepthDesc.ClearValue.DepthStencil.Stencil = 0;
+    RefCntAutoPtr<ITexture> pSelectionRTDepth;
+    m_pDevice->CreateTexture(RTDepthDesc, nullptr, &pSelectionRTDepth);
+    // Store the depth-stencil view
+    m_pSelectionDepthDSV = pSelectionRTDepth->GetDefaultView(TEXTURE_VIEW_DEPTH_STENCIL);
+
+    // We need to release and create a new SRB that references new off-screen render target SRV
+    m_pSelectionRTSRB.Release();
+    m_pSelectionRTPSO->CreateShaderResourceBinding(&m_pSelectionRTSRB, true);
+    m_pSelectionRTSRB->GetVariableByName(SHADER_TYPE_VERTEX, "cbTransforms")->Set(m_VSConstants);
+    m_pSelectionRTSRB->GetVariableByName(SHADER_TYPE_PIXEL, "cbTransforms")->Set(m_VSConstants);
+
+    
+
+    m_pSelectionCompositSRB.Release();
+    m_pSelectionCompositPSO->CreateShaderResourceBinding(&m_pSelectionCompositSRB, true);
+    m_pSelectionCompositSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_SceneDepthTexture")->Set(pRTDepth->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+    m_pSelectionCompositSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_SelectionDepthTexture")->Set(pSelectionRTDepth->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+    m_pSelectionCompositSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_SelectionTexture")->Set(pSelectionRTColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+
 }
 
 } // namespace Sapphire

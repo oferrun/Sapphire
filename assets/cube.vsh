@@ -3,6 +3,10 @@
 cbuffer cbTransforms
 {
     float4x4 g_World;
+    uint2 g_entityId;
+    uint2 g_pad;
+    
+    
 };
 
 cbuffer cbCameraAttribs

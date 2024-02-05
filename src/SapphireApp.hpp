@@ -29,6 +29,15 @@ public:
     WorldGPUResourcesManager* GetWorldGPUResourceManager() { return &m_worldResourceManager; }
 
 private:
+    static constexpr TEXTURE_FORMAT RenderTargetFormat = TEX_FORMAT_RGBA8_UNORM;
+    static constexpr TEXTURE_FORMAT DepthBufferFormat = TEX_FORMAT_D32_FLOAT;
+
+    static constexpr TEXTURE_FORMAT HighlightRenderTargetFormat = TEX_FORMAT_R8_UNORM;
+    
+
+    void CreateSelectionCompositPSO();
+    void CreateRenderTargetPSO();
+    void CreateSelectionRenderTargetPSO();
     void CreatePipelineState();
     void CreatePlanePipelineState();
     void CreateVertexBuffer();
@@ -64,8 +73,29 @@ private:
     RefCntAutoPtr<IShaderResourceBinding> m_PlaneSRB;
     RefCntAutoPtr<IBuffer>                m_PlaneVertexBuffer;
 
+    // picking
+    RefCntAutoPtr<IBuffer>                m_pPickingBuffer;
+    RefCntAutoPtr<IBuffer>                m_pPickingBufferStaging;
+    RefCntAutoPtr<IFence>                 m_pPickingInfoAvailable;
+
     RefCntAutoPtr<IBuffer>                m_TerrainVertexBuffer;
     RefCntAutoPtr<IBuffer>                m_TerrainIndexBuffer;
+
+    RefCntAutoPtr<IPipelineState>         m_pRTPSO;
+    RefCntAutoPtr<IShaderResourceBinding> m_pRTSRB;
+
+    RefCntAutoPtr<IPipelineState>         m_pSelectionRTPSO;
+    RefCntAutoPtr<IShaderResourceBinding> m_pSelectionRTSRB;
+    RefCntAutoPtr<IPipelineState>         m_pSelectionCompositPSO;
+    RefCntAutoPtr<IShaderResourceBinding> m_pSelectionCompositSRB;
+
+    // Offscreen render target and depth-stencil
+    RefCntAutoPtr<ITextureView> m_pColorRTV;
+    RefCntAutoPtr<ITextureView> m_pDepthDSV;
+
+    // Offscreen render target and depth-stencil
+    RefCntAutoPtr<ITextureView> m_pSelectionColorRTV;
+    RefCntAutoPtr<ITextureView> m_pSelectionDepthDSV;
 
     WorldGPUResourcesManager              m_worldResourceManager;
 
