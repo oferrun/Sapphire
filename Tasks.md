@@ -28,3 +28,9 @@
 * implement navmesh and path finding
 
 
+* implement picking mechanism
+* editor selection rendering
+* grid rendering
+* gizmos rendering and manipulation
+
+

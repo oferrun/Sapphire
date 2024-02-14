@@ -2,6 +2,7 @@
 #include "SapphireApp.hpp"
 #include "imgui.h"
 #include "imGuIZMO.h"
+#include "imGuIZMO/imGuIZMO.h"
 #include "ImGuiUtils.hpp"
 #include "ColorConversion.h"
 #include "GraphicsAccessories.hpp"
@@ -13,10 +14,13 @@
 #include "clipper2/clipper.h"
 #include "GrimrockModelLoader.h"
 //#include "LuaInterface.h"
-#include "core/SapphireHash.h"
+//#include "core/SapphireHash.h"
 #include "grid.fxh"
 
 #include <array>
+
+
+static ImGuizmo::OPERATION mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
 
 
 struct PickingBuffer
@@ -1087,7 +1091,10 @@ void SapphireApp::Initialize(const SampleInitInfo& InitInfo)
     /*_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
     _CrtSetBreakAlloc(2570);*/
 
-    static Sapphire::SapphireSystemAllocator s_systemAllocator;
+    //static Sapphire::SapphireSystemAllocator s_systemAllocator;
+
+    m_ModelMatrix = float4x4::Identity();
+    ImGuizmo::GetStyle().HatchedAxisLineThickness = 0;
     
    
     //if (luaL_dofile(L, "hello.lua")) {
@@ -1166,23 +1173,109 @@ void SapphireApp::Initialize(const SampleInitInfo& InitInfo)
    // m_worldResourceManager.loadMeshResouces(m_pDevice, m_pImmediateContext, "", meshLoadData);
 }
 
+void EditTransform(float* cameraView, float* cameraProjection, float* matrix, bool editTransformDecomposition)
+{
+    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::LOCAL);
+    static bool useSnap = false;
+    static float snap[3] = { 1.f, 1.f, 1.f };
+    static float bounds[] = { -0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f };
+    static float boundsSnap[] = { 0.1f, 0.1f, 0.1f };
+    static bool boundSizing = false;
+    static bool boundSizingSnap = false;
+
+    if (editTransformDecomposition)
+    {
+       
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
+            mCurrentGizmoOperation = ImGuizmo::ROTATE;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
+            mCurrentGizmoOperation = ImGuizmo::SCALE;
+        float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+        ImGuizmo::DecomposeMatrixToComponents(matrix, matrixTranslation, matrixRotation, matrixScale);
+        ImGui::InputFloat3("Tr", matrixTranslation);
+        ImGui::InputFloat3("Rt", matrixRotation);
+        ImGui::InputFloat3("Sc", matrixScale);
+        ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, matrix);
+
+        if (mCurrentGizmoOperation != ImGuizmo::SCALE)
+        {
+            if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL))
+                mCurrentGizmoMode = ImGuizmo::LOCAL;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD))
+                mCurrentGizmoMode = ImGuizmo::WORLD;
+        }
+        
+        ImGui::Checkbox("usesnap", &useSnap);
+        ImGui::SameLine();
+
+        switch (mCurrentGizmoOperation)
+        {
+        case ImGuizmo::TRANSLATE:
+            ImGui::InputFloat3("Snap", &snap[0]);
+            break;
+        case ImGuizmo::ROTATE:
+            ImGui::InputFloat("Angle Snap", &snap[0]);
+            break;
+        case ImGuizmo::SCALE:
+            ImGui::InputFloat("Scale Snap", &snap[0]);
+            break;
+        }
+        ImGui::Checkbox("Bound Sizing", &boundSizing);
+        if (boundSizing)
+        {
+            ImGui::PushID(3);
+            ImGui::Checkbox("", &boundSizingSnap);
+            ImGui::SameLine();
+            ImGui::InputFloat3("Snap", boundsSnap);
+            ImGui::PopID();
+        }
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+
+   
+    {
+        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+    }
+
+    //ImGuizmo::DrawGrid(cameraView, cameraProjection, identityMatrix, 100.f);
+    ImGuizmo::SetDrawlist();
+  //  ImGuizmo::DrawCubes(cameraView, cameraProjection, matrix, 1);
+    ImGuizmo::Manipulate(cameraView, cameraProjection, mCurrentGizmoOperation, mCurrentGizmoMode, matrix, NULL, useSnap ? &snap[0] : NULL, boundSizing ? bounds : NULL, boundSizingSnap ? boundsSnap : NULL);
+
+    // ImGuizmo::ViewManipulate(cameraView, camDistance, ImVec2(viewManipulateRight - 128, viewManipulateTop), ImVec2(128, 128), 0x10101010);
+
+  
+}
+
 void SapphireApp::UpdateUI()
 {
-    //const auto& SCDesc = m_pSwapChain->GetDesc();
-    //uint32_t screenWidth = SCDesc.Width;
-    //uint32_t screenHeight = SCDesc.Height;
-    //printf("%d %d", screenWidth, screenHeight);
-    //{
-    //    ImVec2 window_pos = ImVec2((float)(screenWidth / 2), (float)(screenHeight / 2));
-    //    ImGui::SetNextWindowPos(window_pos - ImVec2(130 / 2, 130 / 2));
-    //    ImGui::SetNextWindowSize(ImVec2(500, 500));
-    //    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    //    ImGui::Begin("Transp", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove); // Create a window called "Hello, world!" and append into it.        
-    //    ImGui::SetCursorScreenPos(window_pos - ImVec2(130 / 2,130 /2));
-    //    ImGui::mygizmo3D("Model Rotation", m_modelRotation, ImGui::GetTextLineHeight() * 10);
-    //    ImGui::End();
-    //    ImGui::PopStyleVar(1);
-    //}
+    const auto& SCDesc = m_pSwapChain->GetDesc();
+    uint32_t screenWidth = SCDesc.Width;
+    uint32_t screenHeight = SCDesc.Height;
+   // static float4x4 transform = float4x4::Identity();
+    printf("%d %d", screenWidth, screenHeight);
+    {
+        ImVec2 window_pos = ImVec2((float)(screenWidth / 2), (float)(screenHeight / 2));
+       // float gizmoSize = 800;
+        
+        //ImGui::SetNextWindowSize(ImVec2((float)screenWidth, (float)screenHeight));
+        //ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        ImGuizmo::SetOrthographic(false);
+       // ImGuizmo::BeginFrame();
+        ImGui::SetNextWindowSize(ImVec2((float)screenWidth, (float)screenHeight));
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+       ImGui::Begin("Transp", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove); // Create a window called "Hello, world!" and append into it.        
+       
+       ImGuizmo::SetDrawlist();
+       
+        ImGuizmo::SetID(0);
+        EditTransform(m_ViewMatrix.Data(), m_ProjMatrix.Data(), &m_ModelMatrix.m00, true);
+        ImGui::End();
+    }
 
     // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
     {
@@ -1214,15 +1307,15 @@ void SapphireApp::UpdateUI()
         ImGui::End();
     }
 
-    // 3. Show another simple window.
-    if (m_ShowAnotherWindow)
-    {
-        ImGui::Begin("Another Window", &m_ShowAnotherWindow); // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text("Hello from another window!");
-        if (ImGui::Button("Close Me"))
-            m_ShowAnotherWindow = false;
-        ImGui::End();
-    }
+    //// 3. Show another simple window.
+    //if (m_ShowAnotherWindow)
+    //{
+    //    ImGui::Begin("Another Window", &m_ShowAnotherWindow); // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+    //    ImGui::Text("Hello from another window!");
+    //    if (ImGui::Button("Close Me"))
+    //        m_ShowAnotherWindow = false;
+    //    ImGui::End();
+    //}
 }
 
 // Render a frame
@@ -1240,6 +1333,10 @@ void SapphireApp::Render()
     {
         ClearColor = SRGBToLinear(ClearColor);
     }
+
+    
+#
+    
 
     m_pImmediateContext->SetRenderTargets(1, &m_pColorRTV, m_pDepthDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     m_pImmediateContext->ClearRenderTarget(m_pColorRTV, &ClearColor.x, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1351,22 +1448,19 @@ void SapphireApp::Render()
     
 #else
 
-    float4x4 CameraView = float4x4::Translation(0.f, -1, m_CameraDistance);
-
-    // Get projection matrix adjusted to the current screen orientation
-    const auto CameraProj = GetAdjustedProjectionMatrix(PI_F / 4.0f, 0.1f, 100.f);
-    const auto CameraViewProj = CameraView * CameraProj;
+    
+    const auto CameraViewProj = m_ViewMatrix * m_ProjMatrix;
 
     static bool has_pick_request = false;
     static bool has_signaled = false;
     static Uint64 pick_frame = 1;
 
-    float4x4 CameraWorld = CameraView.Inverse();
+    float4x4 CameraWorld = m_ViewMatrix.Inverse();
     float3 CameraWorldPos = float3::MakeVector(CameraWorld[3]);
     {
         MapHelper<CameraAttribs> CamAttribs(m_pImmediateContext, m_CameraAttribsCB, MAP_WRITE, MAP_FLAG_DISCARD);
-        CamAttribs->mViewT = CameraView.Transpose();
-        CamAttribs->mProjT = CameraProj.Transpose();
+        CamAttribs->mViewT = m_ViewMatrix.Transpose();
+        CamAttribs->mProjT = m_ProjMatrix.Transpose();
         CamAttribs->mViewProjT = CameraViewProj.Transpose();
         CamAttribs->mViewProjInvT = CameraViewProj.Inverse().Transpose();
         CamAttribs->f4Position = float4(CameraWorldPos, 1);
@@ -1434,7 +1528,7 @@ void SapphireApp::Render()
             //// Draw Cube
 
             float3 world_pos = { 0,1,0 };
-            float4x4 playerWorldTransform = m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
+            float4x4 playerWorldTransform = m_ModelMatrix; //m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
             {
                 // Map the buffer and write current world-view-projection matrix
                 MapHelper<DrawCallConstants> cbDrawCallConstants(m_pImmediateContext, m_VSConstants, MAP_WRITE, MAP_FLAG_DISCARD);
@@ -1493,7 +1587,7 @@ void SapphireApp::Render()
             //// Draw Cube
 
             float3 world_pos = { 0,1,0 };
-            float4x4 playerWorldTransform = m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
+            float4x4 playerWorldTransform = m_ModelMatrix;//m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
             {
                 // Map the buffer and write current world-view-projection matrix
                 MapHelper<DrawCallConstants> cbDrawCallConstants(m_pImmediateContext, m_VSConstants, MAP_WRITE, MAP_FLAG_DISCARD);
@@ -1629,27 +1723,38 @@ void SapphireApp::UpdateLuaFrameEnd(double CurrTime, double ElapsedTime)
 
 }
 
-void SapphireApp::Update(double CurrTime, double ElapsedTime)
+void SapphireApp::UpdateFixed(double sim_time, double sim_dt)
 {
-    SampleBase::Update(CurrTime, ElapsedTime);
-
-    UpdateLuaFrameStart(CurrTime, ElapsedTime);
+    UpdateLuaFrameStart(sim_time, sim_dt);
 
 
     bool isRunning = false;
-    
+
+    if (ImGui::IsKeyPressed(ImGuiKey_Q))
+        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+    if (ImGui::IsKeyPressed(ImGuiKey_W))
+        mCurrentGizmoOperation = ImGuizmo::ROTATE;
+    if (ImGui::IsKeyPressed(ImGuiKey_E)) // r Key
+        mCurrentGizmoOperation = ImGuizmo::SCALE;
+
 
     auto inputController = GetInputController();
     if (inputController.IsKeyFirstDown(InputKeys::MoveLeft))
     {
         LOG_INFO_MESSAGE("Key Down First!");
     }
+
+    if (inputController.IsKeyFirstDown(InputKeys::MoveLeft))
+    {
+        LOG_INFO_MESSAGE("Key Down First!");
+    }
+
     if (inputController.IsKeyDown(InputKeys::MoveLeft))
     {
         LOG_INFO_MESSAGE("Key Down!");
         isRunning = true;
         playerFacingDirection = -1;
-        
+
     }
     if (inputController.IsKeyDown(InputKeys::MoveRight))
     {
@@ -1662,24 +1767,50 @@ void SapphireApp::Update(double CurrTime, double ElapsedTime)
         LOG_INFO_MESSAGE("Key released!");
     }
 
-    
-    
+
+
     // Apply rotation
     //float4x4 CubeModelTransform = float4x4::RotationZ(-PI_F * 0.0f);
 
-   
-    
 
-    // Camera is at (0, 0, -15) looking along the Z axis
-    float4x4 View = float4x4::Translation(0.f, 0.0f, 15.0f);
+    float4x4 CameraView = float4x4::Translation(0.f, -1, m_CameraDistance);
+
+    // Get projection matrix adjusted to the current screen orientation
+    const auto CameraProj = GetAdjustedProjectionMatrix(PI_F / 4.0f, 0.1f, 100.f);
+
 
     // Get pretransform matrix that rotates the scene according the surface orientation
     auto SrfPreTransform = GetSurfacePretransformMatrix(float3{ 0, 0, 1 });
 
-    // Get projection matrix adjusted to the current screen orientation
-    auto Proj = GetAdjustedProjectionMatrix(PI_F / 4.0f, 0.1f, 1000.f);
-   // Proj = GetOrthographicMatrix(20.0f);
-    m_ViewProjMatrix = View * SrfPreTransform * Proj;
+
+    m_ViewMatrix = CameraView;
+    m_ProjMatrix = CameraProj;
+    m_ViewProjMatrix = CameraProj * SrfPreTransform * CameraProj;
+}
+
+void SapphireApp::Update(double CurrTime, double ElapsedTime)
+{
+    SampleBase::Update(CurrTime, ElapsedTime);
+
+    const double sim_dt = 0.01;
+    static double accumulator = 0.0;
+    static double sim_time = 0.0;
+
+    if (ElapsedTime > 0.25)
+    {
+        ElapsedTime = 0.25;
+    }
+
+    accumulator += ElapsedTime;
+
+    while (accumulator >= sim_dt)
+    {
+        UpdateFixed(sim_time, sim_dt);
+        sim_time += sim_dt;
+        accumulator -= sim_dt;
+    }
+
+    
     
 #if 0
  

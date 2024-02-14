@@ -19,6 +19,8 @@ public:
     virtual void Render() override final;
     virtual void Update(double CurrTime, double ElapsedTime) override final;
 
+    void UpdateFixed(double sim_time, double sim_dt);
+
     virtual const Char* GetSampleName() const override final { return "Dear Imgui Demo"; }
 
     virtual void WindowResize(Uint32 Width, Uint32 Height) override final;
@@ -64,6 +66,9 @@ private:
     RefCntAutoPtr<ITextureView>           m_TextureSRV[4];
     RefCntAutoPtr<IShaderResourceBinding> m_SRB[4];
     float4x4                              m_ViewProjMatrix;
+    float4x4                              m_ViewMatrix;
+    float4x4                              m_ProjMatrix;
+    float4x4                              m_ModelMatrix;
 
     RefCntAutoPtr<IBuffer>                m_QuadVertexBuffer;
     RefCntAutoPtr<IBuffer>                m_QuadIndexBuffer;
