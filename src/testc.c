@@ -531,7 +531,7 @@ void sapphire_init(IRenderDevice* p_device, ISwapChain* p_swap_chain)
     SP_INIT_TEMP_ALLOCATOR_WITH_ADAPTER(ta, a);
 
    
-    rendering_context_create(p_device, p_swap_chain);
+    g_rendering_context_o = rendering_context_create(p_device, p_swap_chain);
 
     g_viewer = (viewer_t){ .camera = {.near_plane = 0.1f, .far_plane = 100.f, .vertical_fov =  (SP_PI / 4.0f) } };
     viewer_t* viewer = &g_viewer;
