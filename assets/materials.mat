@@ -1,0 +1,41 @@
+materials = 
+[
+	{
+		name = "test_mat_1",
+		albedo_map = "dungeon_floor_dif.png",
+		normal_map = "dungeon_floor_normal.png",
+		arm_map = "dungeon_floor_mr.png",
+		double_sided = false,
+		lighting = true,
+		alpha_test = false,
+		blend_mode = "Opaque",
+		texture_address_mode = "Wrap",		
+		depth_bias = 0,
+	}
+	{
+		name = "brick_wall01",
+		albedo_map = "dungeon_floor_dif.png",
+		normal_map = "dungeon_floor_normal.png",
+		arm_map = "dungeon_floor_mr.png",
+		double_sided = false,
+		lighting = true,
+		alpha_test = false,
+		blend_mode = "Opaque",
+		texture_address_mode = "Wrap",		
+		depth_bias = 0,
+	}
+	{
+		name = "wood_barrel01",
+		albedo_map = "dungeon_floor_dif.png",
+		normal_map = "dungeon_floor_normal.png",
+		arm_map = "dungeon_floor_mr.png",
+		double_sided = false,
+		lighting = true,
+		alpha_test = false,
+		blend_mode = "Opaque",
+		texture_address_mode = "Wrap",		
+		depth_bias = 0,
+	}
+]
+
+

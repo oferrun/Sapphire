@@ -2,18 +2,65 @@ cmake_minimum_required (VERSION 3.6)
 
 project(Sapphire CXX)
 
-set(SOURCE
-    ${CMAKE_CURRENT_LIST_DIR}/src/SapphireApp.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/GrimrockModelLoader.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/3rdparty/Clipper2/CPP/Clipper2Lib/src/clipper.engine.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/3rdparty/Clipper2/CPP/Clipper2Lib/src/clipper.offset.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/3rdparty/Clipper2/CPP/Clipper2Lib/src/clipper.rectclip.cpp
+set(CORE_SOURCE
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/allocator.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/camera.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/config.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/error.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/json.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/os.win32.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/sprintf.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/task_system.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/temp_allocator.c
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/unicode.c
 )
 
-set(INCLUDE
-    ${CMAKE_CURRENT_LIST_DIR}/src/SapphireApp.hpp
-    ${CMAKE_CURRENT_LIST_DIR}/src/GrimrockModelLoader.h
+set(CORE_INCLUDE
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/allocator.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/array.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/camera.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/config.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/error.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/hash.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/json.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/murmurhash64a.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/os.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/sapphire_macros.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/sapphire_math.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/sapphire_types.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/sprintf.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/task_system.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/temp_allocator.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/core/unicode.h
 )
+
+set(APP_SOURCE
+${CMAKE_CURRENT_LIST_DIR}/src/SapphireApp.cpp
+${CMAKE_CURRENT_LIST_DIR}/src/ImGuizmo/ImGuizmo.cpp
+${CMAKE_CURRENT_LIST_DIR}/src/font_system.c
+${CMAKE_CURRENT_LIST_DIR}/src/scene.c
+${CMAKE_CURRENT_LIST_DIR}/src/renderer.c
+${CMAKE_CURRENT_LIST_DIR}/src/grimrock.c
+${CMAKE_CURRENT_LIST_DIR}/src/testc.c
+${CMAKE_CURRENT_LIST_DIR}/src/imgui/cimgui.cpp
+${CMAKE_CURRENT_LIST_DIR}/src/imgui/cimguizmo.cpp
+${CMAKE_CURRENT_LIST_DIR}/3rdparty/Clipper2/CPP/Clipper2Lib/src/clipper.engine.cpp
+${CMAKE_CURRENT_LIST_DIR}/3rdparty/Clipper2/CPP/Clipper2Lib/src/clipper.offset.cpp
+${CMAKE_CURRENT_LIST_DIR}/3rdparty/Clipper2/CPP/Clipper2Lib/src/clipper.rectclip.cpp
+)
+
+set(SOURCE ${APP_SOURCE} ${CORE_SOURCE})
+
+set(APP_INCLUDE
+    ${CMAKE_CURRENT_LIST_DIR}/src/SapphireApp.hpp    
+    ${CMAKE_CURRENT_LIST_DIR}/src/sapphire_renderer.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/scene.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/ImGuizmo/ImGuizmo.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/imgui/cimgui.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/imgui/cimguizmo.h
+)
+
+set(INCLUDE ${APP_INCLUDE} ${CORE_INCLUDE})
 
 set(SHADERS
     assets/cube.vsh
@@ -25,8 +72,10 @@ set(ASSETS
 )
 
 set(ALL_ASSETS ${ASSETS} ${SHADERS})
+set(CORE ${CORE_SOURCE} ${CORE_INCLUDE})
 
 source_group("assets" FILES ${ALL_ASSETS})  
+source_group("core" FILES ${CORE})  
 
 
 add_subdirectory(3rdparty/DiligentEngine/DiligentCore)

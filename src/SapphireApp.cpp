@@ -1,9 +1,9 @@
 
 #include "SapphireApp.hpp"
-#include "imgui.h"
-#include "imGuIZMO.h"
-#include "imGuIZMO/imGuIZMO.h"
-#include "ImGuiUtils.hpp"
+//#include "imgui.h"
+//#include "imGuIZMO.h"
+//#include "imGuIZMO/imGuIZMO.h"
+//#include "ImGuiUtils.hpp"
 #include "ColorConversion.h"
 #include "GraphicsAccessories.hpp"
 #include "GraphicsUtilities.h"
@@ -12,15 +12,31 @@
 #include "CommonlyUsedStates.h"
 #include "mapbox/earcut.hpp"
 #include "clipper2/clipper.h"
-#include "GrimrockModelLoader.h"
+//#include "GrimrockModelLoader.h"
+
 //#include "LuaInterface.h"
 //#include "core/SapphireHash.h"
 #include "grid.fxh"
 
 #include <array>
 
+extern "C" void testcimgui();
 
-static ImGuizmo::OPERATION mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+extern "C" void sapphire_render(IDeviceContext * pContext);
+extern "C" void CreateResources(IRenderDevice * pDevice, ISwapChain * pSwapChain);
+extern "C" void sapphire_init(IRenderDevice * pDevice, ISwapChain * pSwapChain);
+extern "C" void sapphire_destroy();
+extern "C" void sapphire_update(double curr_time, double elapsed_time);
+extern "C" void ss(GraphicsPipelineStateCreateInfo * pso);
+extern "C" void sapphire_window_resize(IRenderDevice * pDevice, ISwapChain * pSwapChain, uint32_t width, uint32_t height);
+extern "C" void testcimgui();
+
+
+
+//static ImGuizmo::OPERATION mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+
+
+
 
 
 struct PickingBuffer
@@ -34,6 +50,7 @@ struct DrawCallConstants
 {
     float4x4 transform;
     uint64_t identity;
+    uint64_t pad;
     
     
 };
@@ -118,6 +135,7 @@ namespace Sapphire
 
 SapphireApp::~SapphireApp()
 {
+    sapphire_destroy();
 }
 
 static void InitCommonSRBVars(IShaderResourceBinding* pSRB,
@@ -239,8 +257,6 @@ void SapphireApp::CreateSelectionCompositPSO()
     RTPSOCreateInfo.PSODesc.ResourceLayout.NumImmutableSamplers = _countof(ImtblSamplers);
 
     m_pDevice->CreateGraphicsPipelineState(RTPSOCreateInfo, &m_pSelectionCompositPSO);
-
-
 }
 
 void SapphireApp::CreateRenderTargetPSO()
@@ -335,7 +351,7 @@ void SapphireApp::CreateRenderTargetPSO()
     RTPSOCreateInfo.PSODesc.ResourceLayout.NumImmutableSamplers = _countof(ImtblSamplers);
 
     m_pDevice->CreateGraphicsPipelineState(RTPSOCreateInfo, &m_pRTPSO);
-
+    //ss(&RTPSOCreateInfo);
     
 }
 
@@ -405,9 +421,7 @@ void SapphireApp::CreateSelectionRenderTargetPSO()
         m_pDevice->CreateShader(ShaderCI, &pPS);
     }
 
-    
-
-    
+  
     // clang-format off
     // Define vertex shader input layout
     LayoutElement LayoutElems[] =
@@ -1094,7 +1108,7 @@ void SapphireApp::Initialize(const SampleInitInfo& InitInfo)
     //static Sapphire::SapphireSystemAllocator s_systemAllocator;
 
     m_ModelMatrix = float4x4::Identity();
-    ImGuizmo::GetStyle().HatchedAxisLineThickness = 0;
+   // ImGuizmo::GetStyle().HatchedAxisLineThickness = 0;
     
    
     //if (luaL_dofile(L, "hello.lua")) {
@@ -1112,7 +1126,7 @@ void SapphireApp::Initialize(const SampleInitInfo& InitInfo)
 
     SampleBase::Initialize(InitInfo);
     // Reset default colors
-    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsDark();
 
 
     /// picking buffers
@@ -1155,7 +1169,7 @@ void SapphireApp::Initialize(const SampleInitInfo& InitInfo)
 
     LoadTextures();
 
-    m_worldResourceManager.init();
+    //m_worldResourceManager.init();
 
     /*lua_State* L = initLuaContext(this);
 
@@ -1167,92 +1181,96 @@ void SapphireApp::Initialize(const SampleInitInfo& InitInfo)
 
     lua_close(L);*/
 
-    SapphireMeshLoadData meshLoadData;
-    loadModelFromFile("C:/Games/Legend of Grimrock/asset_pack_v2/assets/models/env/dungeon_floor_01.model", &meshLoadData);
+    //SapphireMeshLoadData meshLoadData;
+    //loadModelFromFile("C:/Games/Legend of Grimrock/asset_pack_v2/assets/models/env/dungeon_floor_01.model", &meshLoadData);
 
+    sapphire_init(InitInfo.pDevice, InitInfo.pSwapChain);
+    //CreateResources(InitInfo.pDevice, InitInfo.pSwapChain);
    // m_worldResourceManager.loadMeshResouces(m_pDevice, m_pImmediateContext, "", meshLoadData);
 }
+//
+//void EditTransform(float* cameraView, float* cameraProjection, float* matrix, bool editTransformDecomposition)
+//{
+//    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::LOCAL);
+//    static bool useSnap = false;
+//    static float snap[3] = { 1.f, 1.f, 1.f };
+//    static float bounds[] = { -0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f };
+//    static float boundsSnap[] = { 0.1f, 0.1f, 0.1f };
+//    static bool boundSizing = false;
+//    static bool boundSizingSnap = false;
+//
+//    if (editTransformDecomposition)
+//    {
+//       
+//        ImGui::SameLine();
+//        if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
+//            mCurrentGizmoOperation = ImGuizmo::ROTATE;
+//        ImGui::SameLine();
+//        if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
+//            mCurrentGizmoOperation = ImGuizmo::SCALE;
+//        float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+//        ImGuizmo::DecomposeMatrixToComponents(matrix, matrixTranslation, matrixRotation, matrixScale);
+//        ImGui::InputFloat3("Tr", matrixTranslation);
+//        ImGui::InputFloat3("Rt", matrixRotation);
+//        ImGui::InputFloat3("Sc", matrixScale);
+//        ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, matrix);
+//
+//        if (mCurrentGizmoOperation != ImGuizmo::SCALE)
+//        {
+//            if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL))
+//                mCurrentGizmoMode = ImGuizmo::LOCAL;
+//            ImGui::SameLine();
+//            if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD))
+//                mCurrentGizmoMode = ImGuizmo::WORLD;
+//        }
+//        
+//        ImGui::Checkbox("usesnap", &useSnap);
+//        ImGui::SameLine();
+//
+//        switch (mCurrentGizmoOperation)
+//        {
+//        case ImGuizmo::TRANSLATE:
+//            ImGui::InputFloat3("Snap", &snap[0]);
+//            break;
+//        case ImGuizmo::ROTATE:
+//            ImGui::InputFloat("Angle Snap", &snap[0]);
+//            break;
+//        case ImGuizmo::SCALE:
+//            ImGui::InputFloat("Scale Snap", &snap[0]);
+//            break;
+//        }
+//        ImGui::Checkbox("Bound Sizing", &boundSizing);
+//        if (boundSizing)
+//        {
+//            ImGui::PushID(3);
+//            ImGui::Checkbox("", &boundSizingSnap);
+//            ImGui::SameLine();
+//            ImGui::InputFloat3("Snap", boundsSnap);
+//            ImGui::PopID();
+//        }
+//    }
+//
+//    ImGuiIO& io = ImGui::GetIO();
+//
+//   
+//    {
+//        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+//    }
+//
+//    //ImGuizmo::DrawGrid(cameraView, cameraProjection, identityMatrix, 100.f);
+//    ImGuizmo::SetDrawlist();
+//  //  ImGuizmo::DrawCubes(cameraView, cameraProjection, matrix, 1);
+//    ImGuizmo::Manipulate(cameraView, cameraProjection, mCurrentGizmoOperation, mCurrentGizmoMode, matrix, NULL, useSnap ? &snap[0] : NULL, boundSizing ? bounds : NULL, boundSizingSnap ? boundsSnap : NULL);
+//
+//    // ImGuizmo::ViewManipulate(cameraView, camDistance, ImVec2(viewManipulateRight - 128, viewManipulateTop), ImVec2(128, 128), 0x10101010);
+//
+//  
+//}
 
-void EditTransform(float* cameraView, float* cameraProjection, float* matrix, bool editTransformDecomposition)
-{
-    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::LOCAL);
-    static bool useSnap = false;
-    static float snap[3] = { 1.f, 1.f, 1.f };
-    static float bounds[] = { -0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f };
-    static float boundsSnap[] = { 0.1f, 0.1f, 0.1f };
-    static bool boundSizing = false;
-    static bool boundSizingSnap = false;
-
-    if (editTransformDecomposition)
-    {
-       
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
-            mCurrentGizmoOperation = ImGuizmo::ROTATE;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
-            mCurrentGizmoOperation = ImGuizmo::SCALE;
-        float matrixTranslation[3], matrixRotation[3], matrixScale[3];
-        ImGuizmo::DecomposeMatrixToComponents(matrix, matrixTranslation, matrixRotation, matrixScale);
-        ImGui::InputFloat3("Tr", matrixTranslation);
-        ImGui::InputFloat3("Rt", matrixRotation);
-        ImGui::InputFloat3("Sc", matrixScale);
-        ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, matrix);
-
-        if (mCurrentGizmoOperation != ImGuizmo::SCALE)
-        {
-            if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL))
-                mCurrentGizmoMode = ImGuizmo::LOCAL;
-            ImGui::SameLine();
-            if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD))
-                mCurrentGizmoMode = ImGuizmo::WORLD;
-        }
-        
-        ImGui::Checkbox("usesnap", &useSnap);
-        ImGui::SameLine();
-
-        switch (mCurrentGizmoOperation)
-        {
-        case ImGuizmo::TRANSLATE:
-            ImGui::InputFloat3("Snap", &snap[0]);
-            break;
-        case ImGuizmo::ROTATE:
-            ImGui::InputFloat("Angle Snap", &snap[0]);
-            break;
-        case ImGuizmo::SCALE:
-            ImGui::InputFloat("Scale Snap", &snap[0]);
-            break;
-        }
-        ImGui::Checkbox("Bound Sizing", &boundSizing);
-        if (boundSizing)
-        {
-            ImGui::PushID(3);
-            ImGui::Checkbox("", &boundSizingSnap);
-            ImGui::SameLine();
-            ImGui::InputFloat3("Snap", boundsSnap);
-            ImGui::PopID();
-        }
-    }
-
-    ImGuiIO& io = ImGui::GetIO();
-
-   
-    {
-        ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-    }
-
-    //ImGuizmo::DrawGrid(cameraView, cameraProjection, identityMatrix, 100.f);
-    ImGuizmo::SetDrawlist();
-  //  ImGuizmo::DrawCubes(cameraView, cameraProjection, matrix, 1);
-    ImGuizmo::Manipulate(cameraView, cameraProjection, mCurrentGizmoOperation, mCurrentGizmoMode, matrix, NULL, useSnap ? &snap[0] : NULL, boundSizing ? bounds : NULL, boundSizingSnap ? boundsSnap : NULL);
-
-    // ImGuizmo::ViewManipulate(cameraView, camDistance, ImVec2(viewManipulateRight - 128, viewManipulateTop), ImVec2(128, 128), 0x10101010);
-
-  
-}
 
 void SapphireApp::UpdateUI()
 {
+#if 0
     const auto& SCDesc = m_pSwapChain->GetDesc();
     uint32_t screenWidth = SCDesc.Width;
     uint32_t screenHeight = SCDesc.Height;
@@ -1307,6 +1325,11 @@ void SapphireApp::UpdateUI()
         ImGui::End();
     }
 
+    ImGui::Button("bla bla")
+#endif
+        testcimgui();
+        //ImGui::Button("bla bla");
+       // igButton("bla bla");
     //// 3. Show another simple window.
     //if (m_ShowAnotherWindow)
     //{
@@ -1321,8 +1344,18 @@ void SapphireApp::UpdateUI()
 // Render a frame
 void SapphireApp::Render()
 {
-
-    
+    #define SAPPHIRE_RENDERING 1
+#if SAPPHIRE_RENDERING
+    sapphire_render(m_pImmediateContext);
+#endif
+#define RENDER_PBR_CUBES 0
+#define DO_PICKING 0
+#define CamAttribs_UPDATE 0
+#define lightAttribs_UPDATE 0
+#define RENDER_FULL_SCREEN_RENDER_TARGET 0
+#define RENDER_SELECTION 0
+#define RENDER_SELECTION_COMPOSITE 0
+#if 1
 
     auto ClearColor = m_ClearColor;
     if (GetTextureFormatAttribs(m_pSwapChain->GetDesc().ColorBufferFormat).ComponentType == COMPONENT_TYPE_UNORM_SRGB)
@@ -1333,20 +1366,19 @@ void SapphireApp::Render()
     {
         ClearColor = SRGBToLinear(ClearColor);
     }
+    m_ClearColor = { 1,0,0,1 };
 
-    
-#
-    
-
+    // clear render target color and depth buffers
     m_pImmediateContext->SetRenderTargets(1, &m_pColorRTV, m_pDepthDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     m_pImmediateContext->ClearRenderTarget(m_pColorRTV, &ClearColor.x, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
     m_pImmediateContext->ClearDepthStencil(m_pDepthDSV, CLEAR_DEPTH_FLAG, 1.0f, 0, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
+#if DO_PICKING
     // Reset picking buffer
     PickingBuffer picking_buffer;
     std::memset(&picking_buffer, 0, sizeof(picking_buffer));
     m_pImmediateContext->UpdateBuffer(m_pPickingBuffer, 0, sizeof(picking_buffer), &picking_buffer, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
+#endif
     
     
 #if 0
@@ -1455,19 +1487,22 @@ void SapphireApp::Render()
     static bool has_signaled = false;
     static Uint64 pick_frame = 1;
 
+
     float4x4 CameraWorld = m_ViewMatrix.Inverse();
     float3 CameraWorldPos = float3::MakeVector(CameraWorld[3]);
     {
+#if CamAttribs_UPDATE
         MapHelper<CameraAttribs> CamAttribs(m_pImmediateContext, m_CameraAttribsCB, MAP_WRITE, MAP_FLAG_DISCARD);
         CamAttribs->mViewT = m_ViewMatrix.Transpose();
         CamAttribs->mProjT = m_ProjMatrix.Transpose();
         CamAttribs->mViewProjT = CameraViewProj.Transpose();
         CamAttribs->mViewProjInvT = CameraViewProj.Inverse().Transpose();
         CamAttribs->f4Position = float4(CameraWorldPos, 1);
+#endif
         // store mouse position and and picking opacity threshold
         auto inputController = GetInputController();
         auto mouse_state = inputController.GetMouseState();
-
+#if DO_PICKING
         if (!has_pick_request)
         {
             has_pick_request = mouse_state.ButtonFlags & MouseState::BUTTON_FLAG_LEFT;
@@ -1475,12 +1510,12 @@ void SapphireApp::Render()
             pick_frame = m_FrameId;
         }
         
-        
+#endif
         
     }
 
     {
-#if 1
+#if 0   // draw grid start
 
         static const uint32_t grid_extent = 100;
 
@@ -1512,22 +1547,25 @@ void SapphireApp::Render()
         m_pImmediateContext->SetIndexBuffer(nullptr, 0, RESOURCE_STATE_TRANSITION_MODE_NONE);
         //IBuffer* pPlaneBuffs[] = { m_PlaneVertexBuffer };
         //m_pImmediateContext->SetVertexBuffers(0, 1, pPlaneBuffs, nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION, SET_VERTEX_BUFFERS_FLAG_RESET);
+        // draw grid
         m_pImmediateContext->Draw(draw_attribs);
 #endif
+#if lightAttribs_UPDATE
         {
             MapHelper<LightAttribs> lightAttribs(m_pImmediateContext, m_LightAttribsCB, MAP_WRITE, MAP_FLAG_DISCARD);
             lightAttribs->f4Direction = m_LightDirection;
             lightAttribs->f4Direction.z *= -1.0f;
             lightAttribs->f4Intensity = m_LightColor * m_LightIntensity;
         }
-
+#endif
+#if RENDER_PBR_CUBES
         m_pImmediateContext->SetPipelineState(m_pPSO);
         m_pImmediateContext->CommitShaderResources(m_SRB[0], RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
         {
             //// Draw Cube
 
-            float3 world_pos = { 0,1,0 };
+            float3 world_pos = { 0,0,0 };
             float4x4 playerWorldTransform = m_ModelMatrix; //m_modelRotation.ToMatrix() * float4x4::Translation(world_pos);
             {
                 // Map the buffer and write current world-view-projection matrix
@@ -1549,7 +1587,7 @@ void SapphireApp::Render()
             DrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL;
             m_pImmediateContext->DrawIndexed(DrawAttrs);
         }
-
+#if 0
         {
             //// Draw Cube
 
@@ -1575,7 +1613,12 @@ void SapphireApp::Render()
             DrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL;
             m_pImmediateContext->DrawIndexed(DrawAttrs);
         }
+#endif
+#endif
 
+
+#pragma region Render_Selection_Buffer
+#if RENDER_SELECTION
         //// render to selection buffer
         m_pImmediateContext->SetRenderTargets(1, &m_pSelectionColorRTV, m_pSelectionDepthDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
         m_pImmediateContext->ClearRenderTarget(m_pSelectionColorRTV, &ClearColor.x, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -1608,10 +1651,13 @@ void SapphireApp::Render()
             DrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL;
             m_pImmediateContext->DrawIndexed(DrawAttrs);
         }
+#endif
+#pragma endregion  Render_Selection_Buffer
        
     }
 #endif
 
+#if DO_PICKING
     if (has_pick_request)
     {
         if (!has_signaled)
@@ -1656,7 +1702,9 @@ void SapphireApp::Render()
         ++m_FrameId;
         
     }
+#endif
 
+#if RENDER_FULL_SCREEN_RENDER_TARGET 
     // render output to render target
 
     auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
@@ -1676,7 +1724,9 @@ void SapphireApp::Render()
     RTDrawAttrs.NumVertices = 4;
     RTDrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL; // Verify the state of vertex and index buffers
     m_pImmediateContext->Draw(RTDrawAttrs);
+#endif
 
+#if RENDER_SELECTION_COMPOSITE
     // run composite selection pass
 
     // Set the render target pipeline state
@@ -1690,6 +1740,8 @@ void SapphireApp::Render()
     RTDrawAttrs.NumVertices = 4;
     RTDrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL; // Verify the state of vertex and index buffers
     m_pImmediateContext->Draw(RTDrawAttrs);
+#endif
+    //render(m_pImmediateContext.RawPtr());
   
 
     
@@ -1700,7 +1752,7 @@ void SapphireApp::Render()
     //DrawAttrs.Flags = DRAW_FLAG_VERIFY_ALL;
     //m_pImmediateContext->DrawIndexed(DrawAttrs);
 
-   
+#endif
 }
 
 float4x4 SapphireApp::GetOrthographicMatrix(float orthographicSize)
@@ -1730,12 +1782,12 @@ void SapphireApp::UpdateFixed(double sim_time, double sim_dt)
 
     bool isRunning = false;
 
-    if (ImGui::IsKeyPressed(ImGuiKey_Q))
-        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-    if (ImGui::IsKeyPressed(ImGuiKey_W))
-        mCurrentGizmoOperation = ImGuizmo::ROTATE;
-    if (ImGui::IsKeyPressed(ImGuiKey_E)) // r Key
-        mCurrentGizmoOperation = ImGuizmo::SCALE;
+    //if (ImGui::IsKeyPressed(ImGuiKey_Q))
+    //    mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+    //if (ImGui::IsKeyPressed(ImGuiKey_W))
+    //    mCurrentGizmoOperation = ImGuizmo::ROTATE;
+    //if (ImGui::IsKeyPressed(ImGuiKey_E)) // r Key
+    //    mCurrentGizmoOperation = ImGuizmo::SCALE;
 
 
     auto inputController = GetInputController();
@@ -1785,12 +1837,22 @@ void SapphireApp::UpdateFixed(double sim_time, double sim_dt)
 
     m_ViewMatrix = CameraView;
     m_ProjMatrix = CameraProj;
-    m_ViewProjMatrix = CameraProj * SrfPreTransform * CameraProj;
+    m_ViewProjMatrix = CameraView * CameraProj;
+
+    float4 v1 = { -1.0, -1.0, 1.0, 1.0 };
+    float4 vt1 = v1 * m_ViewProjMatrix;
+    (void)vt1;
+    /*tm_vec4_t vt1 = tm_mat44_transform_vec4(&viewer->view_projection, v1);
+    tm_vec4_t v2 = { -1.0, +1.0, 0.0, 1.0 };
+    tm_vec4_t vt2 = tm_mat44_transform_vec4(&viewer->view_projection, v2);
+    tm_vec4_t v3 = { +1.0, -1.0, 0.0, 1.0 };*/
 }
 
 void SapphireApp::Update(double CurrTime, double ElapsedTime)
 {
     SampleBase::Update(CurrTime, ElapsedTime);
+
+    sapphire_update(CurrTime, ElapsedTime);
 
     const double sim_dt = 0.01;
     static double accumulator = 0.0;
@@ -1988,6 +2050,8 @@ void SapphireApp::WindowResize(Uint32 Width, Uint32 Height)
     m_pSelectionCompositSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_SceneDepthTexture")->Set(pRTDepth->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
     m_pSelectionCompositSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_SelectionDepthTexture")->Set(pSelectionRTDepth->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
     m_pSelectionCompositSRB->GetVariableByName(SHADER_TYPE_PIXEL, "g_SelectionTexture")->Set(pSelectionRTColor->GetDefaultView(TEXTURE_VIEW_SHADER_RESOURCE));
+
+    sapphire_window_resize(m_pDevice, m_pSwapChain, Width, Height);
 
 }
 

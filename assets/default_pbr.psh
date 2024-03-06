@@ -1,0 +1,291 @@
+#include "BasicStructures.fxh"
+#include "ShaderUtilities.fxh"
+#include "PBR_Common.fxh"
+#include "ToneMapping.fxh"
+
+#ifndef GLTF_PBR_MANUAL_SRGB
+#   define  GLTF_PBR_MANUAL_SRGB    1
+#endif
+
+#ifndef SRGB_FAST_APPROXIMATION
+#   define  SRGB_FAST_APPROXIMATION 1
+#endif
+
+float3 SRGBtoLINEAR(float3 srgbIn)
+{
+#ifdef GLTF_PBR_MANUAL_SRGB
+#ifdef SRGB_FAST_APPROXIMATION
+    float3 linOut = pow(saturate(srgbIn.xyz), float3(2.2, 2.2, 2.2));
+#else
+        float3 bLess  = step(float3(0.04045, 0.04045, 0.04045), srgbIn.xyz);
+        float3 linOut = mix( srgbIn.xyz/12.92, pow(saturate((srgbIn.xyz + float3(0.055, 0.055, 0.055)) / 1.055), float3(2.4, 2.4, 2.4)), bLess );
+#endif
+    return linOut;
+#else
+    return srgbIn;
+#endif
+}
+
+float4 SRGBtoLINEAR(float4 srgbIn)
+{
+    return float4(SRGBtoLINEAR(srgbIn.xyz), srgbIn.w);
+}
+
+// Find the normal for this fragment, pulling either from a predefined normal map
+// or from the interpolated mesh normal and tangent attributes.
+float3 GLTF_PBR_PerturbNormal(in float3 dPos_dx,
+                              in float3 dPos_dy,
+                              in float2 dUV_dx,
+                              in float2 dUV_dy,
+                              in float3 Normal,
+                              in float3 TSNormal,
+                              bool HasUV,
+                              bool IsFrontFace)
+{
+    // Retrieve the tangent space matrix
+    float NormalLen = length(Normal);
+    float3 ng;
+    if (NormalLen > 1e-5)
+    {
+        ng = Normal / NormalLen;
+    }
+    else
+    {
+        ng = normalize(cross(dPos_dx, dPos_dy));
+#if (defined(GLSL) || defined(GL_ES)) && !defined(VULKAN)
+        // In OpenGL screen is upside-down, so we have to invert the vector
+        ng *= -1.0;
+#endif
+    }
+
+    if (HasUV)
+    {
+        return TransformTangentSpaceNormalGrad(dPos_dx, dPos_dy, dUV_dx, dUV_dy, ng, TSNormal * (IsFrontFace ? +1.0 : -1.0));
+    }
+    else
+    {
+        return ng * (IsFrontFace ? +1.0 : -1.0);
+    }
+}
+
+float3 GLTF_PBR_ApplyDirectionalLight(float3 lightDir, float3 lightColor, SurfaceReflectanceInfo srfInfo, float3 normal, float3 view)
+{
+    float3 pointToLight = -lightDir;
+    float3 diffuseContrib, specContrib;
+    float NdotL;
+    SmithGGX_BRDF(pointToLight, normal, view, srfInfo, diffuseContrib, specContrib, NdotL);
+    // Obtain final intensity as reflectance (BRDF) scaled by the energy of the light (cosine law)
+    float3 shade = (diffuseContrib + specContrib) * NdotL;
+    return lightColor * shade;
+}
+
+// Calculates surface reflectance info
+
+/// \param [in]  Workflow     - PBR workflow (PBR_WORKFLOW_SPECULAR_GLOSINESS or PBR_WORKFLOW_METALLIC_ROUGHNESS).
+/// \param [in]  BaseColor    - Material base color.
+/// \param [in]  PhysicalDesc - Physical material description. For Metallic-roughness workflow,
+///                             'g' channel stores roughness, 'b' channel stores metallic.
+/// \param [out] Metallic     - Metallic value used for shading.
+SurfaceReflectanceInfo GLTF_PBR_GetSurfaceReflectance(int Workflow,
+                                                      float4 BaseColor,
+                                                      float4 PhysicalDesc,
+                                                      out float Metallic)
+{
+    SurfaceReflectanceInfo SrfInfo;
+
+    float3 SpecularColor;
+
+    float3 f0 = float3(0.04, 0.04, 0.04);
+
+    // Roughness is stored in the 'g' channel, metallic is stored in the 'b' channel.
+    // This layout intentionally reserves the 'r' channel for (optional) occlusion map data
+    SrfInfo.PerceptualRoughness = PhysicalDesc.g;
+    Metallic = PhysicalDesc.b;
+
+    SrfInfo.DiffuseColor = BaseColor.rgb * (float3(1.0, 1.0, 1.0) - f0) * (1.0 - Metallic);
+    SpecularColor = lerp(f0, BaseColor.rgb, Metallic);
+    
+    SrfInfo.PerceptualRoughness = clamp(SrfInfo.PerceptualRoughness, 0.0, 1.0);
+
+    // Compute reflectance.
+    float3 Reflectance0 = SpecularColor;
+    float MaxR0 = max(max(Reflectance0.r, Reflectance0.g), Reflectance0.b);
+    // Anything less than 2% is physically impossible and is instead considered to be shadowing. Compare to "Real-Time-Rendering" 4th editon on page 325.
+    float R90 = clamp(MaxR0 * 50.0, 0.0, 1.0);
+
+    SrfInfo.Reflectance0 = Reflectance0;
+    SrfInfo.Reflectance90 = float3(R90, R90, R90);
+
+    return SrfInfo;
+}
+
+cbuffer cbTransforms
+{
+    
+    float4x4 g_World;
+    uint2 g_identity;
+    uint2 g_pad;
+    
+};
+
+cbuffer cbLightAttribs
+{
+    LightAttribs g_LightAttribs;
+}
+
+cbuffer cbCameraAttribs
+{
+    CameraAttribs g_CameraAttribs;
+}
+
+// Statistics buffer contains the global counter of visible objects
+RWByteAddressBuffer PickingBuffer;
+
+///////////////// picking
+bool update_picking_buffers(uint2 pos, uint2 identity, float hit_distance, float opacity)
+{    
+    if (g_CameraAttribs.f4ExtraData[0].a == 0)
+        return false;
+    if (opacity < g_CameraAttribs.f4ExtraData[0].b)
+        return false;
+
+    uint2 cursor_pos = (uint2) g_CameraAttribs.f4ExtraData[0].rg;
+    if (pos.x == cursor_pos.x && pos.y == cursor_pos.y)    
+    {
+       // RWByteAddressBuffer buf = PickingBuffer;
+            
+        uint d = asuint(hit_distance);
+
+        if (d <= PickingBuffer.Load(0))
+            return false;
+        
+        PickingBuffer.Store3(0, uint3(identity, d));
+        return true;
+        
+    
+            /*
+            // as hit_distance is always positive we can use sign bit to indicate a write lock
+            uint current_d_or_locked = 0;
+            do {
+                // d is behind the stored depth value, safe to return immediately.
+                if (d >= buf.Load(0))
+                    return false;
+
+                buf.InterlockedMin(0, d, current_d_or_locked);
+                // We'll only enter this branch if write lock is unlocked (sign bit not set) and new distance
+                // is less than current distance. 
+                if (d < (int)current_d_or_locked) {
+                    uint last_d = 0;
+                    // Attempt to acquire write lock by setting sign bit.
+                    buf.InterlockedCompareExchange(0, d, asuint(-(int)d), last_d);
+                    // This branch will only be taken if taking the write lock succeded.
+                    if (last_d == d) {
+                        // Update object identity.
+                        buf.Store2(4, identity);                        
+                        uint dummy;
+                        // Release write lock. 
+                        buf.InterlockedExchange(0, d, dummy);
+                    }
+                }
+            // Reiterate until write lock as been released
+            } while((int)current_d_or_locked < 0);
+            */
+    }
+    	
+        //return (pos.x >= (cursor_pos.x - 15) && pos.x < (cursor_pos.x + 15) && pos.y >= (cursor_pos.y - 15) && pos.y < (cursor_pos.y + 15));
+    return false;
+        //return (pos.x >= (cursor_pos.x - 5) && pos.x < (cursor_pos.x + 5) && pos.y >= (cursor_pos.y - 5) && pos.y < (cursor_pos.y + 5));    	
+}
+
+////// end of picking
+
+Texture2D       g_AlbedoTexture;
+SamplerState    g_AlbedoTexture_sampler; // By convention, texture samplers must use the '_sampler' suffix
+Texture2D       g_NormalsTexture;
+SamplerState    g_NormalsTexture_sampler; // By convention, texture samplers must use the '_sampler' suffix
+Texture2D       g_PhysicalDescriptorMap;
+SamplerState    g_PhysicalDescriptorMap_sampler;
+
+
+
+struct PSInput
+{
+    float4 ClipPos : SV_POSITION;
+    float3 WorldPos : WORLD_POS;
+    float3 Normal : NORMAL;
+    float2 UV : TEX_COORD;
+};
+
+struct PSOutput
+{
+    float4 Color : SV_TARGET;
+};
+
+void main(in  PSInput  PSIn,
+          out PSOutput PSOut)
+{
+    
+    float4 BaseColor = g_AlbedoTexture.Sample(g_AlbedoTexture_sampler, PSIn.UV);
+    
+   // BaseColor = SRGBtoLINEAR(BaseColor);
+    
+    float3 dWorldPos_dx = ddx(PSIn.WorldPos);
+    float3 dWorldPos_dy = ddy(PSIn.WorldPos);
+    float2 dNormalMapUV_dx = ddx(PSIn.UV);
+    float2 dNormalMapUV_dy = ddy(PSIn.UV);
+    
+    float3 TSNormal = float3(0.0, 0.0, 1.0);
+    // get normal in Tangent Space
+    TSNormal = g_NormalsTexture.Sample(g_NormalsTexture_sampler, PSIn.UV).xyz;
+    
+    // convert normal to -1 + 1 range
+    TSNormal = TSNormal * float3(2.0, 2.0, 2.0) - float3(1.0, 1.0, 1.0);
+    
+    float4 PhysicalDesc = g_PhysicalDescriptorMap.Sample(g_PhysicalDescriptorMap_sampler, PSIn.UV);
+    float Occlusion = PhysicalDesc.r;    
+   // PhysicalDesc = SRGBtoLINEAR(PhysicalDesc);
+    float metallic;
+    //PhysicalDesc.g = saturate(PhysicalDesc.g * g_MaterialInfo.RoughnessFactor);
+    //PhysicalDesc.b = saturate(PhysicalDesc.b * g_MaterialInfo.MetallicFactor);
+    SurfaceReflectanceInfo SrfInfo = GLTF_PBR_GetSurfaceReflectance(1, BaseColor, PhysicalDesc, metallic);
+    
+    // lighting calculation
+    float3 perturbedNormal = GLTF_PBR_PerturbNormal(dWorldPos_dx, dWorldPos_dy, dNormalMapUV_dx, dNormalMapUV_dy,
+                                                    PSIn.Normal, TSNormal, true, true);
+    float3 view = normalize(g_CameraAttribs.f4Position.xyz - PSIn.WorldPos.xyz); // Direction from surface point to camera
+    
+    float3 color = float3(0.0, 0.0, 0.0);
+    float3 lightColor = g_LightAttribs.f4Intensity.rgb;
+    float3 lightDirection = g_LightAttribs.f4Direction.rgb;
+    
+    /// Average log luminance used by tone mapping
+    float AverageLogLum = 0.3f;
+
+        /// Middle gray value used by tone mapping
+    float MiddleGray = 0.18f;
+
+        /// White point value used by tone mapping
+    float WhitePoint = 3.f;
+    
+    color += GLTF_PBR_ApplyDirectionalLight(lightDirection, lightColor, SrfInfo, perturbedNormal, view);
+    color *= Occlusion;
+    ToneMappingAttribs TMAttribs;
+    TMAttribs.iToneMappingMode = TONE_MAPPING_MODE_UNCHARTED2;
+    TMAttribs.bAutoExposure = false;
+    TMAttribs.fMiddleGray = MiddleGray;
+    TMAttribs.bLightAdaptation = false;
+    TMAttribs.fWhitePoint = WhitePoint;
+    TMAttribs.fLuminanceSaturation = 1.0;
+    color = ToneMap(color, TMAttribs, AverageLogLum);
+    
+    bool res = update_picking_buffers(PSIn.ClipPos.xy, g_identity, PSIn.ClipPos.z, BaseColor.a);
+    if (res)
+    {
+        color = float3(1, 0, 0);
+    }
+    
+    PSOut.Color = float4(color, BaseColor.a);
+    //PSOut.Color = float4(1, 1, 1, 1);
+    
+
+}

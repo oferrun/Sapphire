@@ -1,0 +1,20 @@
+entities = 
+[
+	{name = "wall1", model = "dungeon_wall_01.model"}
+]
+instances = 
+[
+	{
+		name = "test_mat_1",
+		entity = "wall1",
+		transform = {
+			position = [0,0,0]
+			rotation = [0,45,0]
+			scale = [4,1,1]
+		}
+	}
+	
+	
+]
+
+

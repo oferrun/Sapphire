@@ -1,10 +1,9 @@
 * engine support for lua jit
-* define material from lua file
+* define material from config file
 * define models from lua file
 * load scene, comprising of instances of models, including transformations
 * create Resource Folder Manager to load resources from folder/files and packed data file.
 * implement packed data file loader
-* string id to index hash map data structure
 * define directional light from lua
 * implement point light rendering
 * implement forward clustered lighting
@@ -26,11 +25,16 @@
 * Dialogs using inkle
 * implement collision detection
 * implement navmesh and path finding
+* font rendering
+* multi line / multi color / font with links rendering
+* render grass / flowers
+* MSAA / other anti-aliasing techniques
 
-
+-- Completed tasks
 * implement picking mechanism
 * editor selection rendering
 * grid rendering
 * gizmos rendering and manipulation
+* reverse Z - clear depth to 0, set depth function to greater then, generate new projection matrices 
 
 
