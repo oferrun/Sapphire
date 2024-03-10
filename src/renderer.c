@@ -26,7 +26,7 @@
 #include "core/camera.h"
 #include "core/sprintf.h"
 #include "sapphire_renderer.h"
-
+#include "config_utils.h"
 #include "renderer.h"
 #include "scene.h"
 
@@ -115,6 +115,7 @@ sp_mat_handle_t material_manager_lookup_material(sapphire_materials_manager_t* m
 static IPipelineState* create_rt_pipeline_state(IRenderDevice* pDevice, ISwapChain* pSwapChain);
 static void init_picking_buffers(IRenderDevice* pDevice, rendering_context_t* rendering_context_o);
 static void init_uniform_buffers(IRenderDevice* pDevice, rendering_context_t* rendering_context_o);
+
 
 ///
 
@@ -367,6 +368,168 @@ void merge_vertex_streams_to_buffer(sapphire_mesh_gpu_load_t* mesh_load_data, ui
     }
 }
 
+void create_cube_mesh_load_data(sp_temp_allocator_i* ta, const char* material, sapphire_mesh_gpu_load_t* p_mesh_load_data)
+{
+    typedef struct Vertex
+    {
+        sp_vec3_t pos;
+        sp_vec3_t normal;
+        sp_vec2_t uv;
+    } Vertex;
+
+    Vertex CubeVerts[] =
+    {
+        {.pos = {-1,-1,-1}, .normal = {0, 0, -1}, .uv = {0,1}},
+        {.pos = {-1,+1,-1}, .normal = {0, 0, -1},.uv = {0,0}},
+        {.pos = {+1,+1,-1}, .normal = {0, 0, -1},.uv = {1,0}},
+        {.pos = {+1,-1,-1}, .normal = {0, 0, -1},.uv = {1,1}},
+
+        {.pos = {-1,-1,-1}, .normal = {0, -1, 0},.uv = {0,1}},
+        {.pos = {-1,-1,+1}, .normal = {0, -1, 0},.uv = {0,0}},
+        {.pos = {+1,-1,+1}, .normal = {0, -1, 0},.uv = {1,0}},
+        {.pos = {+1,-1,-1}, .normal = {0, -1, 0},.uv = {1,1}},
+
+        {.pos = {+1,-1,-1}, .normal = {1, 0, 0},.uv = {0,1} },
+        {.pos = {+1,-1,+1}, .normal = {1, 0, 0},.uv = {1,1}},
+        {.pos = {+1,+1,+1}, .normal = {1, 0, 0},.uv = {1,0}},
+        {.pos = {+1,+1,-1}, .normal = {1, 0, 0},.uv = {0,0}},
+
+        {.pos = {+1,+1,-1}, .normal = {0, 1, 0}, .uv = {0,1}},
+        {.pos = {+1,+1,+1}, .normal = {0, 1, 0},.uv = {0,0}},
+        {.pos = {-1,+1,+1}, .normal = {0, 1, 0},.uv = {1,0}},
+        {.pos = {-1,+1,-1}, .normal = {0, 1, 0},.uv = {1,1}},
+
+        {.pos = {-1,+1,-1}, .normal = {-1, 0, 0},.uv = {1,0}},
+        {.pos = {-1,+1,+1}, .normal = {-1, 0, 0},.uv = {0,0}},
+        {.pos = {-1,-1,+1}, .normal = {-1, 0, 0},.uv = {0,1}},
+        {.pos = {-1,-1,-1}, .normal = {-1, 0, 0},.uv = {1,1}},
+
+        {.pos = {-1,-1,+1}, .normal = {0, 0, 1},.uv = {1,1}},
+        {.pos = {+1,-1,+1}, .normal = {0, 0, 1},.uv = {0,1}},
+        {.pos = {+1,+1,+1}, .normal = {0, 0, 1},.uv = {0,0}},
+        {.pos = {-1,+1,+1}, .normal = {0, 0, 1},.uv = {1,0}}
+    };
+
+    Uint32 Indices[] =
+    {
+        2,0,1,    2,3,0,
+        4,6,5,    4,7,6,
+        8,10,9,   8,11,10,
+        12,14,13, 12,15,14,
+        16,18,17, 16,19,18,
+        20,21,22, 20,22,23
+    };
+
+    uint8_t* indices = sp_temp_alloc(ta, sizeof(Indices));
+    memcpy(indices, &Indices, sizeof(Indices));
+
+    uint8_t* vertices = sp_temp_alloc(ta, sizeof(CubeVerts));
+    memcpy(vertices, &CubeVerts, sizeof(CubeVerts));
+    
+
+    memset(p_mesh_load_data, 0, sizeof(sapphire_mesh_gpu_load_t));
+    p_mesh_load_data->num_indices = 36;
+    p_mesh_load_data->num_submeshes = 1;
+    p_mesh_load_data->num_vertices = 24;
+    p_mesh_load_data->vertex_stride = 32;
+    p_mesh_load_data->vertices_data_size = p_mesh_load_data->num_vertices * p_mesh_load_data->vertex_stride;
+    p_mesh_load_data->indices_data_size = sizeof(uint32_t) * p_mesh_load_data->num_indices;
+    p_mesh_load_data->indices = (const uint8_t*)indices;
+    p_mesh_load_data->vertices[0] = (const uint8_t*)vertices;
+    p_mesh_load_data->vertex_stream_stride_size[0] = p_mesh_load_data->vertex_stride;
+    p_mesh_load_data->sub_meshes[0].indices_start = 0;
+    p_mesh_load_data->sub_meshes[0].indices_count = 36;
+    p_mesh_load_data->sub_meshes[0].material_hash = sp_murmur_hash_string(material);
+    p_mesh_load_data->bounding_box_min = (struct sp_vec3_t){ -1,-1,-1 };
+    p_mesh_load_data->bounding_box_max = (struct sp_vec3_t){ 1,1,1 };
+    p_mesh_load_data->bounding_sphere_center = (struct sp_vec3_t){ 0 };
+    p_mesh_load_data->bounding_sphere_radius = 1.732f;
+
+    
+}
+
+void create_sphere_mesh_load_data(sp_temp_allocator_i* ta, const char* material, uint32_t lod_level, sapphire_mesh_gpu_load_t* p_mesh_load_data)
+{
+    typedef struct Vertex
+    {
+        sp_vec3_t pos;
+        sp_vec3_t normal;
+        sp_vec2_t uv;
+    } Vertex;
+    const int baseSegments = 32; // Base number of segments (latitude lines)
+    const int baseRings = 16; // Base number of rings (longitude lines)
+
+    int numSegments = baseSegments * (1 << lod_level); // Adjust segments based on LOD
+    int numRings = baseRings * (1 << lod_level); // Adjust rings based on LOD
+    int num_vertices = numSegments * numRings;
+    Vertex* vertices = (Vertex*)sp_temp_alloc(ta, num_vertices * sizeof(Vertex));
+    uint32_t index = 0;
+    for (int ring = 0; ring <= numRings; ++ring) {
+        float phi = (float)(ring) / numRings * 2.0f * SP_PI;
+        for (int segment = 0; segment <= numSegments; ++segment) {
+            float theta = (float)(segment) / numSegments * SP_PI;
+
+            Vertex vertex;
+            vertex.pos.x = sinf(theta) * cosf(phi);
+            vertex.pos.y = cosf(theta);
+            vertex.pos.z = sinf(theta) * sinf(phi);
+
+            // Calculate normals (same as positions for a unit sphere)
+            vertex.normal = vertex.pos;
+
+            // Calculate UV coordinates
+            vertex.uv.x = (float)(segment) / numSegments;
+            vertex.uv.y = (float)(ring) / numRings;
+
+            vertices[index] = vertex;
+            ++index;
+        }
+    }
+
+    uint32_t num_indices = num_vertices * 6;
+    uint32_t* indices = (uint32_t*)sp_temp_alloc(ta, num_indices * sizeof(uint32_t));
+
+    index = 0;
+    // Generate indices (same as before)
+    for (int ring = 0; ring < numRings; ++ring) {
+        for (int segment = 0; segment < numSegments; ++segment) {
+            int nextSegment = (segment + 1) % (numSegments + 1);
+            int nextRing = ring + 1;
+
+            // Triangle 1
+            indices[index] = ring * (numSegments + 1) + segment;
+            
+            indices[index + 1] = (nextRing* (numSegments + 1) + segment);
+            indices[index + 2] = (ring * (numSegments + 1) + nextSegment);
+            index += 3;
+            // Triangle 2
+            indices[index] = (ring * (numSegments + 1) + nextSegment);
+            indices[index + 1] = (nextRing * (numSegments + 1) + segment);
+            indices[index + 2] = (nextRing * (numSegments + 1) + nextSegment);
+            index += 3;
+        }
+    }
+
+    memset(p_mesh_load_data, 0, sizeof(sapphire_mesh_gpu_load_t));
+    p_mesh_load_data->num_indices = num_indices;
+    p_mesh_load_data->num_submeshes = 1;
+    p_mesh_load_data->num_vertices = num_vertices;
+    p_mesh_load_data->vertex_stride = 32;
+    p_mesh_load_data->vertices_data_size = p_mesh_load_data->num_vertices * p_mesh_load_data->vertex_stride;
+    p_mesh_load_data->indices_data_size = sizeof(uint32_t) * p_mesh_load_data->num_indices;
+    p_mesh_load_data->indices = (const uint8_t*)indices;
+    p_mesh_load_data->vertices[0] = (const uint8_t*)vertices;
+    p_mesh_load_data->vertex_stream_stride_size[0] = p_mesh_load_data->vertex_stride;
+    p_mesh_load_data->sub_meshes[0].indices_start = 0;
+    p_mesh_load_data->sub_meshes[0].indices_count = num_indices;
+    p_mesh_load_data->sub_meshes[0].material_hash = sp_murmur_hash_string(material);
+    p_mesh_load_data->bounding_box_min = (struct sp_vec3_t){ -1,-1,-1 };
+    p_mesh_load_data->bounding_box_max = (struct sp_vec3_t){ 1,1,1 };
+    p_mesh_load_data->bounding_sphere_center = (struct sp_vec3_t){ 0 };
+    p_mesh_load_data->bounding_sphere_radius = 1.f;
+}
+
+
 sp_mesh_handle_t load_mesh_to_gpu(IRenderDevice* pDevice, rendering_context_t* p_rendering_context, sapphire_mesh_gpu_load_t* mesh_load_data)
 {
     
@@ -507,18 +670,8 @@ void renderer_window_resize(IRenderDevice* pDevice, ISwapChain* pSwapChain, uint
 
 const char* read_file(const char* file, sp_temp_allocator_i* ta);
 
-void get_attribute_as_string(sp_config_i* config, sp_config_item_t item, sp_strhash_t hash, char* buffer)
-{
-    sp_config_item_t attrib = config->object_get(config->inst, item, hash);
-    const char* str = config->to_string(config->inst, attrib);
-    memcpy(buffer, str, strlen(str) + 1);
-}
 
-inline bool get_attribute_as_bool(sp_config_i* config, sp_config_item_t item, sp_strhash_t hash)
-{
-    sp_config_item_t attrib = config->object_get(config->inst, item, hash);    
-    return attrib.type == SP_CONFIG_TYPE_TRUE;
-}
+
 
 // create a pipepile state object for rendering a full screen quad
 static IPipelineState* create_rt_pipeline_state(IRenderDevice* pDevice, ISwapChain* pSwapChain)
@@ -1321,14 +1474,27 @@ void scene_load_resources(const char* root_path_str, scene_def_t* p_scene_def, I
         entity_def_t* p_entity_def = &p_scene_def->entities_def_arr[i];
         //sp_strhash_t mesh_hash = sp_murmur_hash_string(p_entity_def->model_file);
         //if (sp_hash_has(&mesh_file_to_handle, mesh_hash) == false)
+        if (p_entity_def->flags == 0)
         {
             sp_sprintf_api->print(mesh_file, sizeof(mesh_file), "%s/%s", root_path_str, p_entity_def->model_file);
             read_file_stream(mesh_file, ta, &stream, &size);
-            read_grimrock_model_from_stream(stream, size, &mesh_load_data);
-
-            sp_mesh_handle_t mesh_handle = load_mesh_to_gpu(p_device, g_rendering_context_o, &mesh_load_data);
-            sp_hash_add(&entity_to_mesh_handle, p_entity_def->entity_hash, mesh_handle);
+            read_grimrock_model_from_stream(stream, size, &mesh_load_data);            
         }
+        else
+        {
+            if (strcmp(p_entity_def->model_file, "cube") == 0)
+            {
+                create_cube_mesh_load_data(ta, p_entity_def->material_file, &mesh_load_data);
+            }
+            else if (strcmp(p_entity_def->model_file, "sphere") == 0)
+            {
+                create_sphere_mesh_load_data(ta, p_entity_def->material_file, 0, &mesh_load_data);
+            }
+                
+        }
+
+        sp_mesh_handle_t mesh_handle = load_mesh_to_gpu(p_device, g_rendering_context_o, &mesh_load_data);
+        sp_hash_add(&entity_to_mesh_handle, p_entity_def->entity_hash, mesh_handle);
         
     }
 

@@ -16,6 +16,8 @@ typedef struct entity_def_t
 {
     sp_strhash_t entity_hash;
     char model_file[FILE_MAX_PATH_LEN];
+    char material_file[FILE_MAX_PATH_LEN];
+    uint32_t flags; // use predefined shape = 1
 } entity_def_t;
 
 typedef struct scene_def_t

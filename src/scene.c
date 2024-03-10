@@ -9,6 +9,7 @@
 #include "core/array.h"
 #include "core/sapphire_math.h"
 #include "scene.h"
+#include "config_utils.h"
 
 #include <memory.h>
 
@@ -17,7 +18,7 @@
 const char* read_file(const char* file, sp_temp_allocator_i* ta);
 
 void get_attribute_as_string(sp_config_i* config, sp_config_item_t item, sp_strhash_t hash, char* buffer);
-
+inline double get_attribute_as_number(sp_config_i* config, sp_config_item_t item, sp_strhash_t hash);
 
 void get_attribute_as_vec3(sp_config_i* config, sp_config_item_t item, sp_strhash_t hash, sp_vec3_t* vec3)
 {
@@ -62,6 +63,8 @@ void scene_load_file(const char* scene_file, scene_def_t* p_scene_def, sp_alloca
     sp_config_item_t root = scene_config->root(scene_config->inst);
     sp_strhash_t s_name_hash = sp_murmur_hash_string("name");
     sp_strhash_t s_model_hash = sp_murmur_hash_string("model");
+//    sp_strhash_t s_predefined_shape_hash = sp_murmur_hash_string("shape");
+    sp_strhash_t s_material_hash = sp_murmur_hash_string("material");
     sp_strhash_t s_entities_hash = sp_murmur_hash_string("entities");
     sp_strhash_t s_instances_hash = sp_murmur_hash_string("instances");
     sp_strhash_t s_entity_hash = sp_murmur_hash_string("entity");
@@ -69,6 +72,7 @@ void scene_load_file(const char* scene_file, scene_def_t* p_scene_def, sp_alloca
     sp_strhash_t s_position_hash = sp_murmur_hash_string("position");
     sp_strhash_t s_rotation_hash = sp_murmur_hash_string("rotation");
     sp_strhash_t s_scale_hash = sp_murmur_hash_string("scale");
+    sp_strhash_t s_flags_hash = sp_murmur_hash_string("flags");
     
 
     
@@ -76,17 +80,19 @@ void scene_load_file(const char* scene_file, scene_def_t* p_scene_def, sp_alloca
     sp_config_item_t* entities_array = NULL;
     uint32_t num_entities = scene_config->to_array(scene_config->inst, entities, &entities_array);
     
-    sp_array_ensure(p_scene_def->entities_def_arr, num_entities, allocator);
-    char name_str[64];
+    sp_array_ensure(p_scene_def->entities_def_arr, num_entities, allocator);    
+    char entity_name_id[64];
     
     for (uint32_t i = 0; i < num_entities; ++i)
     {
         sp_config_item_t entity_item = entities_array[i];
         entity_def_t* p_entity_def = &p_scene_def->entities_def_arr[i];
-        
-        get_attribute_as_string(scene_config, entity_item, s_name_hash, name_str);
-        p_entity_def->entity_hash = sp_murmur_hash_string(name_str);
+        p_entity_def->flags = 0;
+        get_attribute_as_string(scene_config, entity_item, s_name_hash, entity_name_id);
+        p_entity_def->entity_hash = sp_murmur_hash_string(entity_name_id);
         get_attribute_as_string(scene_config, entity_item, s_model_hash, p_entity_def->model_file);
+        get_attribute_as_string(scene_config, entity_item, s_material_hash, p_entity_def->material_file);
+        p_entity_def->flags = (uint32_t)get_attribute_as_number(scene_config, entity_item, s_flags_hash);
     
     }
     sp_array_header(p_scene_def->entities_def_arr)->size = num_entities;
@@ -100,8 +106,8 @@ void scene_load_file(const char* scene_file, scene_def_t* p_scene_def, sp_alloca
         sp_config_item_t instance_item = instances_array[i];
         entity_instance_t* p_instance = &p_scene_def->instances_arr[i];
 
-        get_attribute_as_string(scene_config, instance_item, s_entity_hash, name_str);
-        p_instance->entity_hash = sp_murmur_hash_string(name_str);
+        get_attribute_as_string(scene_config, instance_item, s_entity_hash, entity_name_id);
+        p_instance->entity_hash = sp_murmur_hash_string(entity_name_id);
         sp_config_item_t transform_item = scene_config->object_get(scene_config->inst, instance_item, s_transform_hash);
         sp_vec3_t position;
         sp_vec3_t rotation;

@@ -6,7 +6,7 @@
 #include "core/temp_allocator.h"
 #include "core/os.h"
 #include "core/murmurhash64a.h"
-
+#include "config_utils.h"
 #include <memory.h>
 #include "RenderDevice.h"
 #include "SwapChain.h"
@@ -209,12 +209,7 @@ static void fill_font_buffer(IDeviceContext* pContext)
     }
 }
 
-inline double get_attribute_as_number(sp_config_i* config, sp_config_item_t item, sp_strhash_t hash)
-{
-    sp_config_item_t attrib = config->object_get(config->inst, item, hash);
-    double num = config->to_number(config->inst, attrib);
-    return num;
-}
+
 
 static void load_font_file(const char* font_file)
 {

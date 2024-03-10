@@ -40,6 +40,7 @@ ${CMAKE_CURRENT_LIST_DIR}/src/ImGuizmo/ImGuizmo.cpp
 ${CMAKE_CURRENT_LIST_DIR}/src/font_system.c
 ${CMAKE_CURRENT_LIST_DIR}/src/scene.c
 ${CMAKE_CURRENT_LIST_DIR}/src/renderer.c
+${CMAKE_CURRENT_LIST_DIR}/src/sapphire_input.c
 ${CMAKE_CURRENT_LIST_DIR}/src/grimrock.c
 ${CMAKE_CURRENT_LIST_DIR}/src/testc.c
 ${CMAKE_CURRENT_LIST_DIR}/src/imgui/cimgui.cpp
@@ -54,6 +55,7 @@ set(SOURCE ${APP_SOURCE} ${CORE_SOURCE})
 set(APP_INCLUDE
     ${CMAKE_CURRENT_LIST_DIR}/src/SapphireApp.hpp    
     ${CMAKE_CURRENT_LIST_DIR}/src/sapphire_renderer.h
+    ${CMAKE_CURRENT_LIST_DIR}/src/sapphire_input.h
     ${CMAKE_CURRENT_LIST_DIR}/src/scene.h
     ${CMAKE_CURRENT_LIST_DIR}/src/ImGuizmo/ImGuizmo.h
     ${CMAKE_CURRENT_LIST_DIR}/src/imgui/cimgui.h
